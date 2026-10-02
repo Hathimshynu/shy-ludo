@@ -9,7 +9,7 @@ import { PLAYER_HEX } from '../game/layout';
 import { describeMoves } from '../game/moves';
 import type { GameTransport } from '../game/transport';
 import { useBackGuard } from '../hooks/useBackGuard';
-import { type GameLayout, useGameLayout } from '../hooks/useMedia';
+import { computeGameLayout, type GameLayout, useGameLayout } from '../hooks/useMedia';
 import { selectCanAct, useGame } from '../store/gameStore';
 import { presentation } from '../store/presentationStore';
 import { resolveQuality, useSettings } from '../store/settingsStore';
@@ -45,30 +45,41 @@ function useCountdown(deadline: number | null, now: () => number): number | null
  */
 function useHudInsets(layout: GameLayout, refs: { top: HTMLElement | null; dock: HTMLElement | null }) {
   useLayoutEffect(() => {
+    let frame = 0;
     const measure = () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
+      // Derive the layout from the live viewport, never from a stale render.
+      const current = computeGameLayout(w, h);
       const top = refs.top?.getBoundingClientRect();
       const dock = refs.dock?.getBoundingClientRect();
       let insets = { top: top ? top.bottom : 0, right: 0, bottom: 0, left: 0 };
-      if (layout === 'portrait' && dock) insets = { ...insets, bottom: Math.max(0, h - dock.top) };
-      else if (layout === 'landscape' && dock) insets = { ...insets, right: Math.max(0, w - dock.left) };
+      if (current === 'portrait' && dock) insets = { ...insets, bottom: Math.max(0, h - dock.top) };
+      else if (current === 'landscape' && dock) insets = { ...insets, right: Math.max(0, w - dock.left) };
       else insets = { ...insets, bottom: 20 };
       presentation.setState({ insets });
     };
-    measure();
-    const ro = new ResizeObserver(measure);
-    if (refs.top) ro.observe(refs.top);
-    if (refs.dock) ro.observe(refs.dock);
-    window.addEventListener('resize', measure);
-    window.addEventListener('orientationchange', measure);
+    // Measure now and again on the next frame, once styles for a new layout/viewport have applied.
+    const schedule = () => {
+      measure();
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(measure);
+    };
+    schedule();
+    // Border box: safe-area padding changes the HUD's size without changing its content box.
+    const ro = new ResizeObserver(schedule);
+    if (refs.top) ro.observe(refs.top, { box: 'border-box' });
+    if (refs.dock) ro.observe(refs.dock, { box: 'border-box' });
+    window.addEventListener('resize', schedule);
+    window.addEventListener('orientationchange', schedule);
     // Some mobile browsers report the final size only after the rotation animation.
     const late = () => window.setTimeout(measure, 300);
     window.addEventListener('orientationchange', late);
     return () => {
+      cancelAnimationFrame(frame);
       ro.disconnect();
-      window.removeEventListener('resize', measure);
-      window.removeEventListener('orientationchange', measure);
+      window.removeEventListener('resize', schedule);
+      window.removeEventListener('orientationchange', schedule);
       window.removeEventListener('orientationchange', late);
     };
   }, [layout, refs.top, refs.dock]);

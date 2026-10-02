@@ -60,7 +60,8 @@ test('phone + phone + desktop + tablet in one game: synchronised play, network b
 
   // Once the game is over the update banner appears.
   await expect(phoneA.getByText('A new version of Ludo Nova is available.')).toBeVisible();
-  await expect(phoneA.getByRole('button', { name: 'Update' })).toBeVisible();
+  await expect(phoneA.getByRole('button', { name: 'Update', exact: true })).toBeVisible();
+  await expect(phoneA.getByRole('button', { name: 'Update later' })).toBeVisible();
 
   for (const p of pages) await p.context().close();
 });

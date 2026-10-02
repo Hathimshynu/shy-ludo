@@ -27,7 +27,7 @@ for (const vp of [...PORTRAIT, LANDSCAPE]) {
 
       // Menu (signed in, so the top bar shows the user chip): primary actions, bottom nav, targets.
       await page.getByRole('button', { name: 'Continue as guest' }).tap();
-      await expect(page).toHaveURL(//play$/);
+      await expect(page).toHaveURL(/\/play$/);
       for (const name of ['Play Online', 'Play vs AI', 'Create Room', 'Join Room']) {
         await expectTouchTarget(page.getByRole('link', { name: new RegExp(name) }).first(), name);
       }
