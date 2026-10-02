@@ -1,0 +1,194 @@
+/* ==========================================================================
+   Ludo Nova — design tokens & base
+   ========================================================================== */
+:root {
+  --font-display: 'Outfit Variable', 'Outfit', system-ui, sans-serif;
+  --font-body: 'Inter Variable', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  --bg-0: #06041a;
+  --bg-1: #0b0820;
+  --bg-2: #141034;
+  --bg-3: #1d1747;
+  --panel: rgba(30, 23, 70, 0.58);
+  --panel-strong: rgba(34, 27, 80, 0.9);
+  --panel-solid: #1a1440;
+  --line: rgba(255, 255, 255, 0.08);
+  --line-strong: rgba(255, 255, 255, 0.16);
+  --text: #f5f2ff;
+  --text-dim: #bdb6e2;
+  --text-faint: #8d86b8;
+
+  --accent: #ffc94d;
+  --accent-deep: #ff9b3d;
+  --accent-ink: #2a1600;
+  --nova: #ff6fb5;
+  --indigo: #7c84ff;
+  --good: #34e6a0;
+  --bad: #ff5d73;
+  --warn: #ffb44d;
+
+  --p-red: #ff4d5e;
+  --p-green: #2ee59d;
+  --p-yellow: #ffd23f;
+  --p-blue: #3d8bff;
+  --p-purple: #a66bff;
+  --p-orange: #ff8a3d;
+  --p-cyan: #2fe0e8;
+  --p-pink: #ff5fc8;
+
+  --radius-s: 10px;
+  --radius-m: 16px;
+  --radius-l: 24px;
+  --radius-xl: 32px;
+  --shadow-1: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-2: 0 18px 48px rgba(0, 0, 0, 0.45);
+  --glow-accent: 0 0 0 1px rgba(255, 201, 77, 0.35), 0 8px 30px rgba(255, 170, 60, 0.25);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --gutter: clamp(16px, 4vw, 40px);
+  --hud-h: 64px;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg-1);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow-x: hidden;
+}
+
+/* Cosmic backdrop shared by every screen. */
+.cosmos {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(1200px 700px at 15% -10%, rgba(124, 92, 255, 0.28), transparent 60%),
+    radial-gradient(900px 600px at 110% 20%, rgba(255, 95, 200, 0.18), transparent 60%),
+    radial-gradient(1000px 800px at 50% 120%, rgba(47, 224, 232, 0.14), transparent 60%),
+    linear-gradient(180deg, var(--bg-0), var(--bg-1) 40%, var(--bg-2));
+}
+.cosmos::before,
+.cosmos::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    radial-gradient(1px 1px at 10% 20%, rgba(255, 255, 255, 0.7), transparent 60%),
+    radial-gradient(1px 1px at 30% 70%, rgba(255, 255, 255, 0.5), transparent 60%),
+    radial-gradient(1.5px 1.5px at 70% 30%, rgba(255, 240, 200, 0.7), transparent 60%),
+    radial-gradient(1px 1px at 85% 80%, rgba(255, 255, 255, 0.6), transparent 60%),
+    radial-gradient(1px 1px at 55% 50%, rgba(200, 220, 255, 0.6), transparent 60%),
+    radial-gradient(1.2px 1.2px at 40% 10%, rgba(255, 255, 255, 0.5), transparent 60%);
+  background-size: 420px 420px;
+  opacity: 0.7;
+}
+.cosmos::after {
+  background-size: 700px 700px;
+  opacity: 0.45;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-display);
+  line-height: 1.1;
+  margin: 0 0 0.5em;
+  letter-spacing: -0.01em;
+}
+h1 {
+  font-size: clamp(2rem, 5vw, 3.4rem);
+  font-weight: 800;
+}
+h2 {
+  font-size: clamp(1.5rem, 3.2vw, 2.3rem);
+  font-weight: 750;
+}
+h3 {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+p {
+  margin: 0 0 1em;
+  color: var(--text-dim);
+}
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+  border-radius: 8px;
+}
+
+::selection {
+  background: rgba(255, 201, 77, 0.35);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Reduce motion everywhere when the user (or the OS) asks for it. */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+}
+
+/* Game screens must not scroll or zoom accidentally on touch devices. */
+body.no-scroll {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+  position: fixed;
+  inset: 0;
+}

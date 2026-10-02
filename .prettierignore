@@ -1,0 +1,9 @@
+node_modules
+dist
+coverage
+.local-pg
+playwright-report
+test-results
+prisma/migrations
+package-lock.json
+*.md

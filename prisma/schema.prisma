@@ -1,0 +1,234 @@
+// Ludo Nova — PostgreSQL schema.
+// Run `npm run db:migrate` in development and `npm run db:deploy` in production.
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String    @id @default(cuid())
+  /// Lower-cased unique handle. Guests get a generated handle.
+  username     String    @unique
+  email        String?   @unique
+  passwordHash String?
+  isGuest      Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  lastSeenAt   DateTime  @default(now())
+
+  profile      Profile?
+  sessions     Session[]
+  gamePlayers  GamePlayer[]
+  results      GameResult[]
+  achievements UserAchievement[]
+  friendsSent  Friend[]           @relation("FriendRequester")
+  friendsRecv  Friend[]           @relation("FriendAddressee")
+  hostedRooms  Room[]
+  queueEntries MatchmakingQueue[]
+
+  @@index([isGuest, createdAt])
+}
+
+/// Public profile + server-computed statistics. Never written from client-submitted values.
+model Profile {
+  userId         String   @id
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  displayName    String
+  avatar         String   @default("comet")
+  gamesPlayed    Int      @default(0)
+  gamesWon       Int      @default(0)
+  captures       Int      @default(0)
+  timesCaptured  Int      @default(0)
+  tokensFinished Int      @default(0)
+  sixesRolled    Int      @default(0)
+  rating         Int      @default(1200)
+  bestRank       Int?
+  updatedAt      DateTime @updatedAt
+
+  @@index([gamesWon])
+  @@index([gamesPlayed])
+  @@index([captures])
+  @@index([rating])
+}
+
+/// Refresh-token sessions. Tokens are stored hashed; rotation + reuse detection by family.
+model Session {
+  id           String    @id @default(cuid())
+  userId       String
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash    String    @unique
+  familyId     String
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  replacedById String?
+  userAgent    String?
+  ip           String?
+  createdAt    DateTime  @default(now())
+
+  @@index([userId])
+  @@index([familyId])
+}
+
+enum RoomKind {
+  PRIVATE
+  MATCHMAKING
+}
+
+enum RoomStatus {
+  LOBBY
+  PLAYING
+  FINISHED
+  CLOSED
+}
+
+model Room {
+  id        String     @id
+  code      String
+  kind      RoomKind
+  status    RoomStatus @default(LOBBY)
+  hostId    String?
+  host      User?      @relation(fields: [hostId], references: [id], onDelete: SetNull)
+  settings  Json
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  games     Game[]
+
+  @@index([code, status])
+}
+
+enum GameStatus {
+  ACTIVE
+  FINISHED
+  ABANDONED
+}
+
+model Game {
+  id          String       @id
+  roomId      String?
+  room        Room?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  status      GameStatus   @default(ACTIVE)
+  playerCount Int
+  armCount    Int
+  rules       Json
+  /// State at game start. initialSnapshot + events (folded with applyEvent) = any later state.
+  initialSnapshot Json
+  /// Latest authoritative GameState (used to recover live games after a restart).
+  snapshot    Json
+  lastSeq     Int          @default(0)
+  startedAt   DateTime     @default(now())
+  finishedAt  DateTime?
+  updatedAt   DateTime     @updatedAt
+  players     GamePlayer[]
+  events      GameEvent[]
+  results     GameResult[]
+
+  @@index([status])
+}
+
+model GamePlayer {
+  id          String  @id @default(cuid())
+  gameId      String
+  game        Game    @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  /// Engine player id (user id for humans, generated id for bots).
+  playerId    String
+  userId      String?
+  user        User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  seat        Int
+  color       String
+  displayName String
+  isBot       Boolean @default(false)
+  botLevel    String?
+
+  @@unique([gameId, seat])
+  @@unique([gameId, playerId])
+  @@index([userId])
+}
+
+/// Append-only, sequence-numbered game events (replay / recovery / audit).
+model GameEvent {
+  id             BigInt   @id @default(autoincrement())
+  gameId         String
+  game           Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  sequenceNumber Int
+  playerId       String?
+  eventType      String
+  payload        Json
+  timestamp      DateTime
+
+  @@unique([gameId, sequenceNumber])
+}
+
+model GameResult {
+  id             String   @id @default(cuid())
+  gameId         String
+  game           Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  playerId       String
+  userId         String?
+  user           User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  rank           Int
+  captures       Int      @default(0)
+  tokensFinished Int      @default(0)
+  forfeited      Boolean  @default(false)
+  ratingBefore   Int?
+  ratingAfter    Int?
+  createdAt      DateTime @default(now())
+
+  @@unique([gameId, playerId])
+  @@index([userId, createdAt])
+}
+
+enum FriendStatus {
+  PENDING
+  ACCEPTED
+  BLOCKED
+}
+
+model Friend {
+  id          String       @id @default(cuid())
+  requesterId String
+  requester   User         @relation("FriendRequester", fields: [requesterId], references: [id], onDelete: Cascade)
+  addresseeId String
+  addressee   User         @relation("FriendAddressee", fields: [addresseeId], references: [id], onDelete: Cascade)
+  status      FriendStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+
+  @@unique([requesterId, addresseeId])
+}
+
+/// Audit trail of matchmaking queue entries. The live queue lives in Redis (or memory).
+model MatchmakingQueue {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  playerCount Int
+  enqueuedAt  DateTime  @default(now())
+  resolvedAt  DateTime?
+  outcome     String?
+  roomId      String?
+
+  @@index([userId, enqueuedAt])
+}
+
+model Achievement {
+  key         String            @id
+  name        String
+  description String
+  sortOrder   Int               @default(0)
+  users       UserAchievement[]
+}
+
+model UserAchievement {
+  userId         String
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementKey String
+  achievement    Achievement @relation(fields: [achievementKey], references: [key], onDelete: Cascade)
+  unlockedAt     DateTime    @default(now())
+
+  @@id([userId, achievementKey])
+}

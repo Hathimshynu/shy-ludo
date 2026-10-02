@@ -1,0 +1,17 @@
+node_modules/
+dist/
+build/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
+.turbo/
+.vercel/
+.local-pg/
+test-results/
+playwright-report/
+apps/web/dev-dist/
+*.tsbuildinfo
+dist-e2e/

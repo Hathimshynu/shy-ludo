@@ -1,0 +1,50 @@
+{
+  "name": "ludo-nova",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Ludo Nova — an original 2–8 player online 3D Ludo game.",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "concurrently -k -n api,web -c magenta,cyan \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:web": "npm run dev -w @ludo/web",
+    "dev:server": "npm run dev -w @ludo/server",
+    "db:local": "node scripts/local-postgres.mjs",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "db:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "lint": "eslint . --max-warnings=0",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test:unit && npm run test:integration",
+    "test:unit": "npm run test -w @ludo/game-engine -w @ludo/validation -w @ludo/web",
+    "test:integration": "npm run test:integration -w @ludo/server",
+    "test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
+    "test:load": "node tests/load/socket-load.mjs",
+    "build": "npm run build -w @ludo/server && npm run build -w @ludo/web",
+    "build:web": "npm run build -w @ludo/web",
+    "build:server": "npm run db:generate && npm run build -w @ludo/server",
+    "start": "npm run start -w @ludo/server",
+    "postinstall": "prisma generate --schema prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@playwright/test": "^1.63.0",
+    "concurrently": "^10.0.5",
+    "embedded-postgres": "^18.4.0-beta.17",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.9",
+    "typescript": "~5.9",
+    "typescript-eslint": "^8.71.0",
+    "vitest": "^5.0.3"
+  }
+}

@@ -1,0 +1,77 @@
+# Local full stack: PostgreSQL + Redis + API + web.
+#   cp .env.example .env   # then set real secrets
+#   docker compose up --build
+# Web: http://localhost:8080  ·  API: http://localhost:4000/health
+# No credentials are hard-coded: everything comes from .env (see .env.example).
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ludo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-ludo}
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-ludo} -d ${POSTGRES_DB:-ludo}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    command: ['redis-server', '--appendonly', 'yes']
+    ports:
+      - '6379:6379'
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  server:
+    build:
+      context: .
+      dockerfile: apps/server/Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ludo}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-ludo}
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET in .env}
+      CLIENT_URL: ${COMPOSE_CLIENT_URL:-http://localhost:8080}
+      # Plain-HTTP localhost: cookies cannot be Secure, so keep SameSite=Lax via the proxy.
+      COOKIE_SAMESITE: lax
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - '4000:4000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: /api
+        VITE_SOCKET_URL: ''
+        VITE_SITE_URL: http://localhost:8080
+    environment:
+      API_UPSTREAM: http://server:4000
+    ports:
+      - '8080:8080'
+    depends_on:
+      - server
+
+volumes:
+  pgdata:
+  redisdata:

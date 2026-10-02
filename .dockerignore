@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/dist-e2e
+.git
+.env
+.env.*
+!.env.example
+.local-pg
+coverage
+test-results
+playwright-report
+*.log
