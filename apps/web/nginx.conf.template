@@ -23,6 +23,17 @@ server {
     proxy_pass ${API_UPSTREAM};
   }
 
+  # Service worker + manifest must always revalidate so new versions are detected.
+  location = /sw.js {
+    add_header Cache-Control "no-cache, no-store, must-revalidate";
+    try_files $uri =404;
+  }
+  location = /manifest.webmanifest {
+    add_header Cache-Control "public, max-age=0, must-revalidate";
+    default_type application/manifest+json;
+    try_files $uri =404;
+  }
+
   # Fingerprinted assets: cache forever.
   location /assets/ {
     add_header Cache-Control "public, max-age=31536000, immutable";

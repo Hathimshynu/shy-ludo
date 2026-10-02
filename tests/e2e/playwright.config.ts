@@ -22,7 +22,9 @@ export default defineConfig({
     },
   },
   projects: [
-    { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: /mobile.spec.ts/ },
-    { name: 'mobile-chromium', use: { ...devices['Pixel 7'] }, testMatch: /mobile\.spec\.ts/ },
+    // Desktop regression suite + PWA checks (PWA specs open their own phone contexts).
+    { name: 'desktop-chromium', use: { ...devices['Desktop Chrome'] }, testIgnore: /mobile[\\/]/ },
+    // Mobile suite: Pixel 7 emulation (touch, coarse pointer). Specs set their own viewports.
+    { name: 'mobile-chromium', use: { ...devices['Pixel 7'] }, testMatch: /mobile[\\/].*\.spec\.ts/ },
   ],
 });

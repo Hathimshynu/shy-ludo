@@ -115,6 +115,32 @@ Horizontal scaling needs sticky game ownership (see "Known limitations" in the R
 `npm run build` generates `robots.txt` (disallows `/game/`, `/room/`, `/solo/game`,
 `/profile`, `/settings`, `/api/`) and `sitemap.xml` from `VITE_SITE_URL`.
 
+### PWA on Vercel
+
+The build emits `sw.js`, `workbox-*.js`, `manifest.webmanifest` and `icons/*` at the
+site root. `apps/web/vercel.json` already:
+
+* excludes them (and `robots.txt`, `sitemap.xml`, `og-image.png`) from the SPA rewrite;
+* serves `sw.js` with `Cache-Control: no-cache, no-store, must-revalidate` so new
+  deployments are detected, and the manifest/workbox runtime with `max-age=0`;
+* keeps `/api/*` rewritten to Render — the service worker never intercepts or caches it;
+* allows the worker under the existing CSP (`worker-src 'self' blob:`).
+
+Installability requires HTTPS (Vercel provides it). After deploying, verify:
+
+```bash
+curl -sI https://<your-app>/sw.js | grep -i cache-control      # no-cache
+curl -s  https://<your-app>/manifest.webmanifest | head -c 200  # JSON, not HTML
+curl -sI https://<your-app>/icons/icon-512.png | grep -i content-type  # image/png
+```
+
+Chrome DevTools → Application → Manifest should show no installability errors, and
+Lighthouse → "Installable" should pass.
+
+Render needs **no changes** for the PWA: Socket.IO, CORS (`CLIENT_URL` must list the
+exact Vercel origin), cookies via the `/api` rewrite, WebSocket upgrade and `/health`
+are unchanged.
+
 ### Without the rewrite (alternative)
 
 Set `VITE_API_URL=https://<api>.onrender.com/api` and on Render

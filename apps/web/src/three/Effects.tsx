@@ -2,6 +2,7 @@ import { useFrame } from '@react-three/fiber';
 import { useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { type Effect, presentation, usePresentation } from '../store/presentationStore';
+import type { QualityTier } from '../services/device';
 import { useSettings } from '../store/settingsStore';
 
 const ringGeometry = new THREE.RingGeometry(0.3, 0.42, 48);
@@ -113,10 +114,11 @@ function Burst({ e, count, speed, gravity, rise }: { e: Effect; count: number; s
   );
 }
 
-export function Effects() {
+export function Effects({ quality = 'high' }: { quality?: QualityTier }) {
   const effects = usePresentation((s) => s.effects);
   const reduce = useSettings((s) => s.reduceMotion);
-  const scale = reduce ? 0.3 : 1;
+  // LOW keeps capture feedback but with far fewer particles.
+  const scale = reduce ? 0.3 : quality === 'low' ? 0.4 : quality === 'ultra' ? 1.6 : 1;
   return (
     <group>
       {effects.map((e) => {
@@ -140,15 +142,16 @@ export function Effects() {
 
 const CONFETTI_COLORS = ['#ff4d5e', '#2ee59d', '#ffd23f', '#3d8bff', '#a66bff', '#ff8a3d', '#2fe0e8', '#ff5fc8', '#ffffff'];
 
-export function Celebration({ quality }: { quality: 'high' | 'medium' | 'low' }) {
+export function Celebration({ quality }: { quality: QualityTier }) {
   const winnerId = usePresentation((s) => s.winnerId);
   const reduce = useSettings((s) => s.reduceMotion);
   if (!winnerId) return null;
-  const count = reduce ? 40 : quality === 'high' ? 260 : quality === 'medium' ? 160 : 90;
+  const count = reduce ? 40 : { ultra: 400, high: 260, medium: 160, low: 70 }[quality];
+  const shells = { ultra: 8, high: 6, medium: 3, low: 0 }[quality];
   return (
     <group>
       <Confetti count={count} />
-      {!reduce && <Fireworks shells={quality === 'low' ? 3 : 6} />}
+      {!reduce && shells > 0 && <Fireworks shells={shells} />}
     </group>
   );
 }

@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { audio } from '../services/audio';
+import { deviceProfile, type QualityTier } from '../services/device';
 
-export type Quality = 'auto' | 'high' | 'medium' | 'low';
+export type Quality = 'auto' | QualityTier;
 
 export interface SettingsState {
   soundOn: boolean;
@@ -12,6 +13,7 @@ export interface SettingsState {
   reduceMotion: boolean;
   quality: Quality;
   showEmotes: boolean;
+  haptics: boolean;
   set: (patch: Partial<Omit<SettingsState, 'set'>>) => void;
 }
 
@@ -53,9 +55,16 @@ export const useSettings = create<SettingsState>()(
       reduceMotion: Boolean(prefersReducedMotion),
       quality: 'auto',
       showEmotes: true,
+      haptics: true,
       set: (patch) => set(patch),
     }),
-    { name: 'ludo-nova:settings', storage: safeStorage, version: 1 },
+    {
+      name: 'ludo-nova:settings',
+      storage: safeStorage,
+      version: 2,
+      // v1 → v2: adds haptics and the ULTRA tier; keeps every existing preference.
+      migrate: (persisted) => ({ haptics: true, ...(persisted as object) }) as SettingsState,
+    },
   ),
 );
 
@@ -66,13 +75,8 @@ function syncAudio(s: SettingsState): void {
 syncAudio(useSettings.getState());
 useSettings.subscribe(syncAudio);
 
-/** Resolve "auto" quality from the device. */
-export function resolveQuality(q: Quality): Exclude<Quality, 'auto'> {
+/** Resolve "auto" quality from the device capability probe. */
+export function resolveQuality(q: Quality): QualityTier {
   if (q !== 'auto') return q;
-  const coarse = window.matchMedia?.('(pointer: coarse)').matches;
-  const cores = navigator.hardwareConcurrency ?? 4;
-  const memory = (navigator as unknown as { deviceMemory?: number }).deviceMemory ?? 8;
-  if (coarse && (cores <= 4 || memory <= 3)) return 'low';
-  if (coarse) return 'medium';
-  return cores >= 8 ? 'high' : 'medium';
+  return deviceProfile().recommended;
 }

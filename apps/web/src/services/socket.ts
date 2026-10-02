@@ -155,7 +155,15 @@ class SocketClient {
   }
 
   private handleOnline = () => {
-    if (this.socket && !this.socket.connected) this.socket.connect();
+    if (!this.socket) return;
+    if (this.socket.connected) {
+      // Brief network blip: the transport survived, so we are connected again.
+      this.setStatus('connected');
+      // Re-sync the server clock (missed events are caught by the director's seq-gap check).
+      void this.syncClock();
+    } else {
+      this.socket.connect();
+    }
   };
 
   private handleOffline = () => this.setStatus('offline');

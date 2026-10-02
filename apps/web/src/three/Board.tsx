@@ -11,6 +11,7 @@ import {
   yardCenter,
 } from '@ludo/game-engine';
 import { PLAYER_HEX } from '../game/layout';
+import type { QualityTier } from '../services/device';
 import {
   armRotation,
   boardOutline,
@@ -30,7 +31,7 @@ interface BoardProps {
   armCount: number;
   /** Arms that have a player (others are drawn dimmer). */
   activeArms?: number[];
-  quality?: 'high' | 'medium' | 'low';
+  quality?: QualityTier;
 }
 
 /**

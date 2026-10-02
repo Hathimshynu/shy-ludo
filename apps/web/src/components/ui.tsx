@@ -1,6 +1,7 @@
 import { type ReactNode, useEffect, useId, useRef } from 'react';
 import { BRAND } from '@ludo/config';
 import { audio } from '../services/audio';
+import { useBackGuard } from '../hooks/useBackGuard';
 import { useUi } from '../store/uiStore';
 
 export function Logo({ size = 34, withText = true }: { size?: number; withText?: boolean }) {
@@ -72,12 +73,29 @@ export function Spinner({ label }: { label?: string }) {
   );
 }
 
-export function Modal({ title, children, onClose, actions }: { title: string; children: ReactNode; onClose: () => void; actions?: ReactNode }) {
+/**
+ * Dialog that renders as a centred panel on desktop and as a bottom sheet on phones.
+ * Escape, the close button, tapping the backdrop and the Android Back button all close it.
+ */
+export function Modal({
+  title,
+  children,
+  onClose,
+  actions,
+  className,
+}: {
+  title: string;
+  children: ReactNode;
+  onClose: () => void;
+  actions?: ReactNode;
+  className?: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const titleId = useId();
+  useBackGuard(true, onClose);
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
-    ref.current?.querySelector<HTMLElement>('button, input, select, [tabindex]')?.focus();
+    ref.current?.querySelector<HTMLElement>('.modal-body button, .modal-body input, .modal-actions button, [tabindex]')?.focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -88,9 +106,15 @@ export function Modal({ title, children, onClose, actions }: { title: string; ch
     };
   }, [onClose]);
   return (
-    <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="modal panel" role="dialog" aria-modal="true" aria-labelledby={titleId} ref={ref}>
-        <h2 id={titleId}>{title}</h2>
+    <div className="overlay" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className={`modal panel ${className ?? ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId} ref={ref}>
+        <span className="sheet-handle" aria-hidden="true" />
+        <div className="modal-head">
+          <h2 id={titleId}>{title}</h2>
+          <button type="button" className="icon-btn modal-close" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
+        </div>
         <div className="modal-body">{children}</div>
         {actions && <div className="modal-actions">{actions}</div>}
       </div>

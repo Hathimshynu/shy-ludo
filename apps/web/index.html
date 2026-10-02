@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- User zoom stays enabled for accessibility; the game screen prevents accidental gestures itself. -->
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Ludo Nova — 3D Online Ludo for 2–8 Players</title>
     <meta
@@ -12,8 +13,16 @@
     <meta name="color-scheme" content="dark" />
     <link rel="canonical" href="%VITE_SITE_URL%/" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="apple-touch-icon" href="/icon-192.png" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+
+    <!-- Installed (standalone) experience -->
+    <meta name="application-name" content="Ludo Nova" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Ludo Nova" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
 
     <!-- Open Graph -->
     <meta property="og:type" content="website" />
@@ -36,9 +45,62 @@
       content="A premium 3D Ludo board for 2–8 players. Online matchmaking, private rooms with friends, and smart AI."
     />
     <meta name="twitter:image" content="%VITE_SITE_URL%/og-image.png" />
+
+    <!-- Critical CSS for the instant splash screen (shown before any JavaScript runs). -->
+    <style>
+      html,
+      body {
+        margin: 0;
+        background: #0b0820;
+        color: #f5f2ff;
+      }
+      .boot-splash {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        justify-items: center;
+        gap: 14px;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+        background: radial-gradient(800px 500px at 50% 30%, rgba(124, 92, 255, 0.28), transparent 60%), #0b0820;
+      }
+      .boot-splash svg {
+        animation: boot-pulse 1.6s ease-in-out infinite;
+      }
+      .boot-splash b {
+        font-size: 1.6rem;
+        letter-spacing: 0.24em;
+      }
+      .boot-splash span {
+        color: #bdb6e2;
+        font-size: 0.95rem;
+      }
+      @keyframes boot-pulse {
+        50% {
+          transform: scale(1.08) rotate(8deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-splash svg {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="boot-splash" role="status" aria-label="Loading Ludo Nova">
+        <svg width="72" height="72" viewBox="0 0 64 64" aria-hidden="true">
+          <path d="M32 4 L38 26 L32 32 L26 26 Z" fill="#2ee59d" />
+          <path d="M60 32 L38 38 L32 32 L38 26 Z" fill="#ffd23f" />
+          <path d="M32 60 L26 38 L32 32 L38 38 Z" fill="#ff4d5e" />
+          <path d="M4 32 L26 26 L32 32 L26 38 Z" fill="#3d8bff" />
+          <circle cx="32" cy="32" r="9" fill="#ffc94d" />
+        </svg>
+        <b>LUDO NOVA</b>
+        <span>Loading…</span>
+      </div>
+    </div>
     <noscript>Ludo Nova needs JavaScript to run.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>

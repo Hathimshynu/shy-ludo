@@ -131,6 +131,11 @@ npx playwright install chromium   # once, before the first E2E run
   test file. Set `TEST_DATABASE_ADMIN_URL` to use an existing server (CI does).
 * The engine's dice are injectable (`createDiceEngine({ random })`, `createSequenceDice([...])`),
   so rule tests are fully deterministic.
+* E2E projects: `desktop-chromium` (smoke, solo, multiplayer, quick match, 8 sessions, PWA)
+  and `mobile-chromium` (`tests/e2e/mobile/`: 320–768 px portrait + landscape layouts, touch
+  dice and token selection, double-tap guard, safe areas, orientation changes, Back button,
+  audio hint, haptics, winner screen, phone + phone + desktop + tablet multiplayer).
+  Run one project with `npm run test:e2e -- --project mobile-chromium`.
 
 ### Load testing
 
@@ -175,6 +180,35 @@ headers and the `/api` rewrite to Render. Set `VITE_API_URL=/api`,
   gaps and resync with `game:sync`. On reconnect the server sends `session:restore`.
 
 Full event list: [MULTIPLAYER.md](MULTIPLAYER.md).
+
+## Mobile & installable app (PWA)
+
+Ludo Nova is mobile-first and installable. Details: [ARCHITECTURE.md §7](ARCHITECTURE.md#7-mobile--pwa-architecture),
+[MOBILE_IMPLEMENTATION_SUMMARY.md](MOBILE_IMPLEMENTATION_SUMMARY.md).
+
+* **Layouts:** portrait phones (top bar · board · action dock · player strip), landscape
+  phones/tablets (board + side panel) and desktop (player rail + dice tray). The 3D camera
+  frames the board in whatever space the HUD leaves, at any size from 320 px.
+* **Breakpoints:** ≤ 480 (small phones), ≤ 640 (bottom sheets), ≤ 760 (bottom navigation),
+  ≤ 899 (single-column lobby); game layout by aspect ratio/height (see `computeGameLayout`).
+* **Touch:** tap the die (double taps are ignored), tap a glowing token **or** a move chip
+  ("Capture!", "Release", "Move 4 · Front token"). Hover, keyboard and right click are never required.
+* **Graphics quality:** Auto / Low / Medium / High / Ultra (Settings). Auto uses a capability
+  probe (WebGL, memory, cores, data-saver); LOW drops bloom, shadows, reflections and particles
+  and caps at 30 fps.
+* **Install:** Android/desktop Chromium get an in-app "Install" prompt (from
+  `beforeinstallprompt`, snoozed 14 days on "Later"); iPhone/iPad get "Share → Add to Home
+  Screen" instructions. Settings → Install app shows the state ("Installed").
+* **Offline:** the app shell and solo games work offline; online play shows
+  "You're offline. Reconnect to the internet to play online." The service worker never caches
+  API, Socket.IO or authenticated data.
+* **Updates:** a "new version" banner appears when a deployment is detected — never during an
+  active online game; it reloads only when the player taps **Update**.
+* **Haptics** (Android), **"Tap to enable sound"** hint, **Back button** closes sheets / asks
+  before leaving a game, safe areas for notches and home indicators.
+
+Regenerate the app icons (original artwork, SVG master in the script):
+`node scripts/generate-icons.mjs`.
 
 ## 13. Game rules
 

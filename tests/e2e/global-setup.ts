@@ -122,6 +122,13 @@ export default async function globalSetup() {
     kill(web);
     kill(api);
     if (pg) await pg.stop();
-    if (dir) rmSync(dir, { recursive: true, force: true });
+    // Windows may keep the data directory locked for a moment after Postgres stops.
+    if (dir) {
+      try {
+        rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 500 });
+      } catch {
+        /* temp dir is cleaned up by the OS */
+      }
+    }
   };
 }

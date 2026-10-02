@@ -175,3 +175,45 @@ requests `game:sync` and snaps to the authoritative snapshot.
   with rotation and reuse detection, scrypt password hashing.
 * Secrets are only read on the server; the web app only knows
   `VITE_API_URL`, `VITE_SOCKET_URL` and `VITE_SITE_URL`.
+
+## 7. Mobile & PWA architecture
+
+The mobile client is **the same app** — same engine, transports, director and server.
+Only the composition, input affordances and rendering budget adapt.
+
+```text
+viewport ──▶ computeGameLayout(w, h)          (hooks/useMedia.ts)
+              portrait  │ landscape │ desktop
+                        ▼
+GameView renders the HUD for that layout and measures it (ResizeObserver)
+                        ▼
+presentation.insets {top,right,bottom,left}   (no React re-render of the canvas)
+                        ▼
+CameraRig: free rect = viewport − insets → fit board on both axes →
+           camera.setViewOffset() centres the projection in the free rect
+```
+
+| Concern | Where |
+| --- | --- |
+| Layout selection | `hooks/useMedia.ts` (`computeGameLayout`): portrait (w/h < 0.9), landscape (h < 640 or w < 1024), desktop |
+| HUD → camera framing | `pages/GameView.tsx` (`useHudInsets`) → `three/GameScene.tsx` (`CameraRig`) |
+| Safe areas | `--sat/--sar/--sab/--sal` CSS variables on `:root` (from `env(safe-area-inset-*)`) |
+| Quality tiers | `services/device.ts` (capability probe) → `TIERS` table in `three/GameScene.tsx` |
+| Touch selection | 3D tokens (enlarged hit area on coarse pointers) **and** on-screen move chips (`game/moves.ts`) |
+| Double-tap guard | 350 ms input debounce + director `pending` lock + server `actionId` dedupe |
+| Back button | `hooks/useBackGuard.ts` (stacked history guards: sheets close, games ask) |
+| Haptics / audio unlock | `services/haptics.ts`, `services/audio.ts` (`onUnlockChange`) |
+| PWA | `vite-plugin-pwa` (prompt mode) + `services/pwa.ts` (install, iOS help, updates, standalone) |
+
+### Service worker strategy
+
+* **Precache only** the versioned static build: JS, CSS, Latin fonts, icons, the solo
+  game worker and the lazy 3D chunk (so solo games work offline). Non-Latin font
+  subsets, the OG image, robots and sitemap are excluded.
+* **No runtime caching.** `/api/*`, `/socket.io/*`, `/health` and every authenticated
+  response always go to the network and are denylisted from the navigation fallback.
+* Navigations fall back to the precached `index.html` (SPA shell offline).
+* Revisioned precache entries + `cleanupOutdatedCaches` make stale assets impossible
+  after a deploy; `sw.js` is served with `no-cache` so updates are detected.
+* `registerType: 'prompt'`: a new worker waits; the "new version" banner is hidden
+  during an active online game and applies only when the player taps **Update**.

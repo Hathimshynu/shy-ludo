@@ -1,13 +1,21 @@
 /* ==========================================================================
-   In-game HUD
+   In-game HUD — three compositions (see hooks/useMedia.ts → computeGameLayout):
+     .layout-desktop   large landscape: left player rail + floating dice tray
+     .layout-landscape phones/tablets sideways: board + right-hand side panel
+     .layout-portrait  phones upright: top bar · board · action dock · player strip
+   The 3D camera frames the board in whatever the HUD leaves free (measured in JS).
    ========================================================================== */
 .game-root {
+  --dock-w: clamp(250px, 34vw, 340px);
   position: fixed;
   inset: 0;
+  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
   -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 .game-canvas {
   position: absolute;
@@ -32,13 +40,14 @@
   top: 0;
   left: 0;
   right: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 12px max(16px, env(safe-area-inset-right)) 12px max(16px, env(safe-area-inset-left));
-  padding-top: max(12px, env(safe-area-inset-top));
+  gap: 10px;
+  padding: 10px max(14px, var(--sar)) 10px max(14px, var(--sal));
+  padding-top: max(10px, var(--sat));
   pointer-events: none;
-  background: linear-gradient(180deg, rgba(6, 4, 26, 0.75), transparent);
+  background: linear-gradient(180deg, rgba(6, 4, 26, 0.82), rgba(6, 4, 26, 0.35) 75%, transparent);
 }
 .hud-top > * {
   pointer-events: auto;
@@ -66,18 +75,72 @@
   transition: color 0.4s;
 }
 
-/* ---- Player cards --------------------------------------------------------------- */
+/* Compact "who's playing" pill (phones / landscape). Tap → players sheet. */
+.turn-pill {
+  --pc: var(--accent);
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 5px 14px 5px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--pc) 55%, transparent);
+  background: rgba(16, 12, 44, 0.88);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow 0.3s, border-color 0.3s;
+}
+.turn-pill.is-mine {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--pc) 60%, transparent), 0 0 24px color-mix(in srgb, var(--pc) 35%, transparent);
+}
+.turn-pill-text {
+  min-width: 0;
+  display: grid;
+  line-height: 1.15;
+}
+.turn-pill-name {
+  font-weight: 700;
+  font-size: 0.95rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn-pill .hud-turn {
+  font-size: 0.8rem;
+  font-weight: 650;
+  color: var(--pc);
+  text-shadow: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn-pill-timer {
+  margin-left: auto;
+  padding-left: 6px;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+.turn-pill-timer.is-urgent {
+  color: var(--bad);
+  animation: blink 0.5s infinite;
+}
+
+/* ---- Player cards ---------------------------------------------------------------- */
 .hud-players {
   position: absolute;
-  top: 82px;
-  left: max(14px, env(safe-area-inset-left));
+  top: calc(82px + var(--sat));
+  left: max(14px, var(--sal));
   display: grid;
   gap: 8px;
   width: 230px;
-  max-height: calc(100% - 100px);
+  max-height: calc(100% - 100px - var(--sat));
   overflow-y: auto;
   scrollbar-width: none;
-  pointer-events: auto;
 }
 .player-card {
   --pc: #fff;
@@ -94,9 +157,11 @@
 .player-card.is-turn {
   border-color: color-mix(in srgb, var(--pc) 70%, transparent);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--pc) 50%, transparent), 0 8px 28px color-mix(in srgb, var(--pc) 30%, transparent);
+}
+.layout-desktop .player-card.is-turn {
   transform: translateX(6px);
 }
-.player-card.is-turn::before {
+.player-card.is-turn:not(.is-chip)::before {
   content: '';
   position: absolute;
   left: -1px;
@@ -210,13 +275,64 @@
   color: var(--warn);
   font-weight: 600;
 }
+/* Compact rows (landscape side panel) */
+.player-card.is-compact {
+  padding: 5px 8px;
+  gap: 8px;
+}
+.player-card.is-compact .pc-avatar {
+  width: 36px;
+  height: 36px;
+}
+.player-card.is-compact .pc-avatar .avatar,
+.player-card.is-compact .pc-avatar .avatar svg {
+  width: 32px !important;
+  height: 32px !important;
+}
+.player-card.is-compact .pc-timer {
+  width: 44px;
+  height: 44px;
+}
+.player-card.is-compact .pc-tag {
+  display: none;
+}
+/* Chips (portrait player strip) */
+.player-card.is-chip {
+  flex: none;
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  min-width: 52px;
+  padding: 5px 6px 4px;
+  border-radius: 14px;
+}
+.player-card.is-chip .pc-avatar {
+  width: 34px;
+  height: 34px;
+}
+.pc-chip-meta {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.player-card.is-chip.is-turn .pc-chip-meta {
+  color: var(--pc);
+}
 
-/* ---- Dice tray ------------------------------------------------------------------- */
+/* ---- Dock: dice / action area --------------------------------------------------- */
+.hud-dock {
+  position: absolute;
+  z-index: 4;
+  right: max(16px, var(--sar));
+  bottom: max(16px, var(--sab));
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+  max-width: min(440px, calc(100% - 32px));
+}
 .dice-tray {
   --pc: var(--accent);
-  position: absolute;
-  right: max(16px, env(safe-area-inset-right));
-  bottom: max(16px, env(safe-area-inset-bottom));
   display: flex;
   align-items: center;
   gap: 12px;
@@ -238,6 +354,8 @@
   }
 }
 .dice-button {
+  position: relative;
+  flex: none;
   width: 112px;
   height: 112px;
   padding: 0;
@@ -254,13 +372,29 @@
 .dice-button:not(:disabled):active {
   transform: scale(0.92);
 }
+.dice-cta {
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  transform: translateX(-50%);
+  padding: 1px 10px;
+  border-radius: 999px;
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 0.74rem;
+  letter-spacing: 0.18em;
+  color: var(--accent-ink);
+  background: linear-gradient(135deg, #ffe08a, var(--accent));
+  pointer-events: none;
+}
 .dice-fallback {
   font-size: 3rem;
 }
 .dice-info {
+  flex: 1;
   display: grid;
   gap: 4px;
-  min-width: 120px;
+  min-width: 110px;
 }
 .dice-label {
   font-family: var(--font-display);
@@ -277,57 +411,171 @@
   font-weight: 700;
   animation: blink 0.5s infinite;
 }
-.emote-wrap {
-  position: relative;
+
+/* On-screen move choices — unambiguous even when tokens overlap on the board. */
+.move-picker {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
-.emote-palette {
-  position: absolute;
-  bottom: 54px;
-  right: 0;
+.move-chip {
+  --pc: var(--accent);
   display: grid;
-  grid-template-columns: repeat(4, 44px);
-  gap: 6px;
-  padding: 8px;
-  border-radius: 18px;
-  background: rgba(16, 12, 44, 0.95);
-  border: 1px solid var(--line-strong);
-  box-shadow: var(--shadow-2);
-  animation: pop 0.25s var(--ease-spring);
+  min-height: 48px;
+  min-width: 112px;
+  padding: 7px 14px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--pc) 70%, transparent);
+  background: color-mix(in srgb, var(--pc) 16%, rgba(16, 12, 44, 0.94));
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  touch-action: manipulation;
+  animation: chip-in 0.3s var(--ease-spring) both;
 }
-.emote-palette button {
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
+.move-chip strong {
+  font-family: var(--font-display);
+  font-size: 0.98rem;
+}
+.move-chip span {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+.move-chip:active {
+  transform: scale(0.96);
+}
+@keyframes chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+/* ---- Portrait --------------------------------------------------------------------- */
+.layout-portrait .hud-dock {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-width: none;
+  justify-items: stretch;
+  gap: 8px;
+  padding: 10px max(12px, var(--sar)) max(10px, var(--sab)) max(12px, var(--sal));
+  background: linear-gradient(0deg, rgba(6, 4, 26, 0.94) 72%, rgba(6, 4, 26, 0.55) 90%, transparent);
+}
+.layout-portrait .dice-tray {
+  padding: 8px 12px 8px 8px;
+  border-radius: 22px;
+}
+.layout-portrait .dice-button {
+  width: 96px;
+  height: 96px;
+}
+.layout-portrait .move-picker {
+  justify-content: stretch;
+}
+.layout-portrait .move-chip {
+  flex: 1 1 calc(50% - 4px);
+  min-width: 0;
+}
+.player-strip {
+  display: flex;
+  justify-content: safe center;
+  gap: 6px;
+  width: 100%;
+  padding: 0;
+  margin: 0;
   border: 0;
-  background: rgba(255, 255, 255, 0.06);
-  font-size: 1.4rem;
+  background: none;
+  color: inherit;
+  overflow-x: auto;
+  scrollbar-width: none;
   cursor: pointer;
 }
-.emote-palette button:hover {
-  background: rgba(255, 255, 255, 0.14);
+.player-strip::-webkit-scrollbar {
+  display: none;
+}
+
+/* ---- Landscape (phones/tablets sideways) ---------------------------------------------- */
+.layout-landscape .hud-top {
+  right: var(--dock-w);
+}
+.layout-landscape .hud-dock {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: var(--dock-w);
+  max-width: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: max(10px, var(--sat)) max(10px, var(--sar)) max(10px, var(--sab)) 10px;
+  background: linear-gradient(270deg, rgba(10, 7, 32, 0.96), rgba(10, 7, 32, 0.88));
+  border-left: 1px solid var(--line);
+  overflow-y: auto;
+}
+.dock-players {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+}
+.dock-players .player-card.is-chip {
+  min-width: 0;
+}
+.layout-landscape .dice-tray {
+  padding: 6px 10px 6px 6px;
+  border-radius: 20px;
+}
+.layout-landscape .dice-button {
+  width: 84px;
+  height: 84px;
+}
+.layout-landscape .dice-info {
+  min-width: 0;
+}
+.layout-landscape .move-picker {
+  justify-content: stretch;
+}
+.layout-landscape .move-chip {
+  flex: 1 1 100%;
 }
 
 /* ---- Banners / notices -------------------------------------------------------------- */
 .turn-banner {
   --pc: var(--accent);
   position: absolute;
-  top: 22%;
+  z-index: 6;
+  top: 24%;
   left: 50%;
   transform: translateX(-50%);
   display: grid;
   justify-items: center;
-  padding: 14px 30px;
+  max-width: calc(100% - 32px);
+  padding: 14px 28px;
   border-radius: 22px;
-  background: rgba(10, 7, 30, 0.72);
+  background: rgba(10, 7, 30, 0.84);
   border: 1px solid color-mix(in srgb, var(--pc) 70%, transparent);
   box-shadow: 0 0 50px color-mix(in srgb, var(--pc) 40%, transparent);
   pointer-events: none;
   animation: banner 1.7s var(--ease-out) both;
-  white-space: nowrap;
+  text-align: center;
+}
+.layout-landscape .turn-banner {
+  left: calc((100% - var(--dock-w)) / 2);
+}
+.layout-portrait .turn-banner {
+  top: 30%;
 }
 .turn-banner strong {
   font-family: var(--font-display);
-  font-size: clamp(1.5rem, 4vw, 2.3rem);
+  font-size: clamp(1.4rem, 4vw, 2.3rem);
   font-weight: 900;
   color: var(--pc);
   text-shadow: 0 0 24px var(--pc);
@@ -357,16 +605,62 @@
 }
 .hud-notice {
   position: absolute;
-  top: 76px;
+  z-index: 6;
+  top: calc(76px + var(--sat));
   left: 50%;
   transform: translateX(-50%);
+  max-width: calc(100% - 32px);
   padding: 10px 18px;
   border-radius: 999px;
-  background: rgba(255, 180, 77, 0.16);
+  background: rgba(60, 40, 10, 0.92);
   border: 1px solid rgba(255, 180, 77, 0.5);
   color: #ffd9a0;
   font-weight: 650;
+  text-align: center;
+}
+.layout-landscape .hud-notice {
+  left: calc((100% - var(--dock-w)) / 2);
+}
+.audio-hint {
+  position: absolute;
+  z-index: 6;
+  top: calc(70px + var(--sat));
+  left: 50%;
+  transform: translateX(-50%);
+  min-height: 44px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: rgba(16, 12, 44, 0.92);
+  color: var(--text);
+  font-weight: 650;
+  cursor: pointer;
   white-space: nowrap;
+}
+.layout-landscape .audio-hint {
+  left: calc((100% - var(--dock-w)) / 2);
+}
+
+/* ---- Sheets used in game ------------------------------------------------------------- */
+.players-sheet {
+  display: grid;
+  gap: 8px;
+}
+.emote-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.emote-grid button {
+  min-height: 56px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.06);
+  font-size: 1.6rem;
+  cursor: pointer;
+}
+.emote-grid button:active {
+  transform: scale(0.94);
 }
 
 /* ---- Winner ------------------------------------------------------------------------------ */
@@ -376,16 +670,20 @@
   z-index: 40;
   display: grid;
   place-items: center;
-  padding: 16px;
-  background: radial-gradient(circle at 50% 40%, rgba(10, 6, 30, 0.35), rgba(4, 2, 16, 0.75));
+  padding: max(12px, var(--sat)) max(12px, var(--sar)) max(12px, var(--sab)) max(12px, var(--sal));
+  background: radial-gradient(circle at 50% 40%, rgba(10, 6, 30, 0.35), rgba(4, 2, 16, 0.78));
   animation: fade 0.8s 1.2s both;
-  overflow-y: auto;
 }
 .winner-card {
   position: relative;
   width: min(100%, 480px);
+  max-height: calc(100vh - var(--sat) - var(--sab) - 24px);
+  max-height: calc(100dvh - var(--sat) - var(--sab) - 24px);
+  display: flex;
+  flex-direction: column;
   text-align: center;
   overflow: hidden;
+  padding: clamp(16px, 4vw, 28px);
   animation: pop 0.6s 1.3s var(--ease-spring) both;
 }
 .winner-burst {
@@ -397,36 +695,45 @@
   pointer-events: none;
   animation: breathe 3s ease-in-out infinite;
 }
+.winner-emoji {
+  position: relative;
+  font-size: clamp(2rem, 8vw, 2.8rem);
+  line-height: 1;
+}
 .winner-title {
   position: relative;
-  font-size: clamp(2.6rem, 9vw, 4.2rem);
+  font-size: clamp(2.2rem, 9vw, 4.2rem);
   font-weight: 900;
   letter-spacing: 0.02em;
   background: linear-gradient(135deg, #fff, #ffe08a 40%, var(--accent) 70%, var(--nova));
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  margin-bottom: 0.1em;
+  margin: 0.1em 0;
 }
 .winner-sub {
   position: relative;
-  font-weight: 600;
+  font-weight: 650;
+  margin-bottom: 0.4em;
 }
 .ranking {
   position: relative;
   list-style: none;
   padding: 0;
-  margin: 16px 0;
+  margin: 10px 0 14px;
   display: grid;
-  gap: 8px;
+  gap: 6px;
   text-align: left;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 .ranking li {
   --pc: #fff;
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 8px 12px;
+  gap: 10px;
+  padding: 6px 12px;
   border-radius: 14px;
   background: rgba(8, 6, 26, 0.5);
   border: 1px solid var(--line);
@@ -463,111 +770,84 @@
 }
 .winner-actions {
   position: relative;
+  flex: none;
   display: flex;
   gap: 10px;
   justify-content: center;
   flex-wrap: wrap;
 }
+.winner-actions .btn {
+  flex: 1 1 160px;
+}
 
-/* ---- Portrait / phones -------------------------------------------------------------------- */
-.game-root.is-portrait .hud-players {
-  top: calc(64px + env(safe-area-inset-top));
-  left: 8px;
-  right: 8px;
-  width: auto;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 6px;
-  max-height: 140px;
-}
-.game-root.is-portrait .player-card {
-  padding: 6px 8px;
-  gap: 8px;
-}
-.game-root.is-portrait .player-card.is-turn {
-  transform: translateY(-2px);
-}
-.game-root.is-portrait .pc-avatar {
-  width: 36px;
-  height: 36px;
-}
-.game-root.is-portrait .pc-avatar .avatar,
-.game-root.is-portrait .pc-avatar .avatar svg {
-  width: 32px !important;
-  height: 32px !important;
-}
-.game-root.is-portrait .pc-timer {
-  width: 44px;
-  height: 44px;
-}
-.game-root.is-portrait .dice-tray {
-  left: 50%;
-  right: auto;
-  transform: translateX(-50%);
-  width: min(calc(100% - 24px), 420px);
-}
-.game-root.is-portrait .dice-info {
-  flex: 1;
-}
-.game-root.is-portrait .dice-button {
-  width: 96px;
-  height: 96px;
-}
-.game-root.is-portrait .turn-banner {
-  top: 34%;
-}
-@media (max-height: 520px) and (orientation: landscape) {
+/* Short landscape screens: tighter spacing. */
+@media (max-height: 480px) {
   .hud-players {
-    top: 64px;
-    width: 190px;
-    gap: 4px;
+    top: calc(60px + var(--sat));
   }
-  .player-card {
-    padding: 4px 8px;
+  .layout-landscape .dice-button {
+    width: 72px;
+    height: 72px;
   }
-  .dice-button {
-    width: 84px;
-    height: 84px;
+  .winner-title {
+    font-size: 2rem;
   }
-  .hud-top {
+  .winner-emoji {
+    display: none;
+  }
+}
+
+/* Short portrait phones (e.g. 320×568, 360×640): a slimmer dock leaves more room for the board. */
+@media (max-height: 720px) and (orientation: portrait) {
+  .layout-portrait .hud-dock {
+    gap: 6px;
     padding-top: 6px;
+  }
+  .layout-portrait .dice-tray {
+    padding: 4px 10px 4px 4px;
+    gap: 8px;
+  }
+  .layout-portrait .dice-button {
+    width: 72px;
+    height: 72px;
+  }
+  .layout-portrait .dice-label {
+    font-size: 0.95rem;
+  }
+  .layout-portrait .move-chip {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    min-height: 44px;
+    padding: 6px 10px;
+  }
+  .layout-portrait .move-chip strong {
+    font-size: 0.9rem;
+  }
+  .layout-portrait .move-chip span {
+    font-size: 0.72rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .layout-portrait .player-card.is-chip {
+    padding: 3px 5px;
+    min-width: 46px;
+  }
+  .layout-portrait .player-card.is-chip .pc-avatar {
+    width: 30px;
+    height: 30px;
+  }
+  .layout-portrait .player-card.is-chip .avatar,
+  .layout-portrait .player-card.is-chip .avatar svg {
+    width: 26px !important;
+    height: 26px !important;
+  }
+  .layout-portrait .hud-top {
+    padding-top: max(6px, var(--sat));
     padding-bottom: 6px;
   }
-}
-
-/* Big tables in portrait: compact 4-across player chips. */
-.game-root.is-portrait .hud-players.is-compact {
-  grid-template-columns: repeat(4, 1fr);
-  max-height: none;
-}
-.hud-players.is-compact .player-card {
-  flex-direction: column;
-  gap: 2px;
-  padding: 6px 4px;
-  text-align: center;
-}
-.hud-players.is-compact .player-card.is-turn::before {
-  left: 10px;
-  right: 10px;
-  top: auto;
-  bottom: -1px;
-  width: auto;
-  height: 3px;
-}
-.hud-players.is-compact .pc-body {
-  width: 100%;
-}
-.hud-players.is-compact .pc-name {
-  justify-content: center;
-  font-size: 0.72rem;
-}
-.hud-players.is-compact .pc-dot,
-.hud-players.is-compact .pc-tag {
-  display: none;
-}
-.hud-players.is-compact .pc-meta {
-  justify-content: center;
-  font-size: 0.7rem;
-}
-.hud-players.is-compact .pc-meta span + span {
-  display: none;
+  .layout-portrait .turn-pill {
+    min-height: 44px;
+  }
 }

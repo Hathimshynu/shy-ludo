@@ -1,15 +1,23 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { LIMITS } from '@ludo/config';
+import type { PlayerState } from '@ludo/shared-types';
+import { track } from '../services/analytics';
 import { audio } from '../services/audio';
+import { deviceProfile, isTouchDevice } from '../services/device';
 import { GameDirector, ORDINAL } from '../game/director';
 import { PLAYER_HEX } from '../game/layout';
+import { describeMoves } from '../game/moves';
 import type { GameTransport } from '../game/transport';
+import { useBackGuard } from '../hooks/useBackGuard';
+import { type GameLayout, useGameLayout } from '../hooks/useMedia';
 import { selectCanAct, useGame } from '../store/gameStore';
+import { presentation } from '../store/presentationStore';
 import { resolveQuality, useSettings } from '../store/settingsStore';
 import { useUi } from '../store/uiStore';
 import { Avatar } from '../components/Avatar';
+import { AudioHint, Splash } from '../components/Mobile';
 import { EMOTE_GLYPH, PlayerCard } from '../components/PlayerCard';
-import { ConnectionBadge, Modal, Spinner } from '../components/ui';
+import { ConnectionBadge, Modal } from '../components/ui';
 
 const GameScene = lazy(() => import('../three/GameScene').then((m) => ({ default: m.GameScene })));
 const Dice3D = lazy(() => import('../three/Dice3D').then((m) => ({ default: m.Dice3D })));
@@ -30,14 +38,40 @@ function useCountdown(deadline: number | null, now: () => number): number | null
   return left;
 }
 
-function useIsPortrait(): boolean {
-  const [portrait, setPortrait] = useState(() => window.innerWidth / window.innerHeight < 0.9);
-  useEffect(() => {
-    const on = () => setPortrait(window.innerWidth / window.innerHeight < 0.9);
-    window.addEventListener('resize', on);
-    return () => window.removeEventListener('resize', on);
-  }, []);
-  return portrait;
+/**
+ * Measure how much of the viewport the HUD covers so the camera can frame the board
+ * in the remaining rectangle (see CameraRig). Runs on resize, orientation change and
+ * whenever the HUD itself changes size — no per-frame React work.
+ */
+function useHudInsets(layout: GameLayout, refs: { top: HTMLElement | null; dock: HTMLElement | null }) {
+  useLayoutEffect(() => {
+    const measure = () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      const top = refs.top?.getBoundingClientRect();
+      const dock = refs.dock?.getBoundingClientRect();
+      let insets = { top: top ? top.bottom : 0, right: 0, bottom: 0, left: 0 };
+      if (layout === 'portrait' && dock) insets = { ...insets, bottom: Math.max(0, h - dock.top) };
+      else if (layout === 'landscape' && dock) insets = { ...insets, right: Math.max(0, w - dock.left) };
+      else insets = { ...insets, bottom: 20 };
+      presentation.setState({ insets });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (refs.top) ro.observe(refs.top);
+    if (refs.dock) ro.observe(refs.dock);
+    window.addEventListener('resize', measure);
+    window.addEventListener('orientationchange', measure);
+    // Some mobile browsers report the final size only after the rotation animation.
+    const late = () => window.setTimeout(measure, 300);
+    window.addEventListener('orientationchange', late);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+      window.removeEventListener('orientationchange', measure);
+      window.removeEventListener('orientationchange', late);
+    };
+  }, [layout, refs.top, refs.dock]);
 }
 
 export interface GameViewProps {
@@ -53,9 +87,15 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
   const directorRef = useRef<GameDirector | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [emotesOpen, setEmotesOpen] = useState(false);
+  const [playersOpen, setPlayersOpen] = useState(false);
+  const [topEl, setTopEl] = useState<HTMLElement | null>(null);
+  const [dockEl, setDockEl] = useState<HTMLElement | null>(null);
   const qualitySetting = useSettings((s) => s.quality);
   const quality = useMemo(() => resolveQuality(qualitySetting), [qualitySetting]);
-  const portrait = useIsPortrait();
+  const webgl = useMemo(() => deviceProfile().webgl, []);
+  const layout = useGameLayout();
+  const portrait = layout === 'portrait';
+  useHudInsets(layout, { top: topEl, dock: dockEl });
 
   useEffect(() => {
     const director = new GameDirector(transport, myId);
@@ -88,6 +128,25 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
   const mustMove = canAct && visual?.turn.phase === 'move';
   const online = transport.mode === 'online';
   const offline = online && connection !== 'connected';
+  const choices = useMemo(() => (mustMove && visual ? describeMoves(visual, myId) : []), [mustMove, visual, myId]);
+
+  // Android Back during a game asks before leaving instead of silently exiting.
+  useBackGuard(visual?.status === 'playing', () => setLeaving(true));
+
+  // Mobile analytics hooks (local DOM events only — see services/analytics.ts).
+  const startedRef = useRef(false);
+  const finishedRef = useRef(false);
+  useEffect(() => {
+    if (!visual || !isTouchDevice()) return;
+    if (!startedRef.current) {
+      startedRef.current = true;
+      track('game_started_mobile', { mode: transport.mode, players: visual.players.length });
+    }
+    if (visual.status === 'finished' && !finishedRef.current) {
+      finishedRef.current = true;
+      track('game_completed_mobile', { mode: transport.mode, won: visual.rankings[0] === myId });
+    }
+  }, [visual, transport.mode, myId]);
 
   // Countdown ticks in the last five seconds of my turn.
   const lastTick = useRef(-1);
@@ -100,15 +159,31 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
     }
   }, [myTurn, secondsLeft]);
 
+  // Double-tap guard on top of the director's pending lock and server-side dedupe.
+  const lastTap = useRef(0);
+  const guardTap = () => {
+    const t = performance.now();
+    if (t - lastTap.current < 350) return false;
+    lastTap.current = t;
+    return true;
+  };
   const roll = useCallback(() => {
     audio.unlock();
+    if (!guardTap()) return;
     void directorRef.current?.roll();
   }, []);
-  const select = useCallback((playerId: string, index: number) => {
-    if (playerId === myId) void directorRef.current?.move(index);
-  }, [myId]);
+  const move = useCallback((index: number) => {
+    if (!guardTap()) return;
+    void directorRef.current?.move(index);
+  }, []);
+  const select = useCallback(
+    (playerId: string, index: number) => {
+      if (playerId === myId) move(index);
+    },
+    [myId, move],
+  );
 
-  // Keyboard: Space/Enter roll, 1–4 move a token, E emotes, Esc menu.
+  // Keyboard (desktop): Space/Enter roll, 1–4 move a token, Esc menu.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest('input, textarea, select, [role="dialog"]')) return;
@@ -139,117 +214,153 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
     );
   }
 
-  if (!visual) {
-    return (
-      <div className="game-root game-message">
-        <Spinner label="Loading game…" />
-      </div>
-    );
-  }
+  if (!visual) return <Splash label="Loading game…" />;
 
   const timerFraction =
     secondsLeft !== null && visual.rules.turnTimeSeconds > 0 ? Math.min(1, secondsLeft / visual.rules.turnTimeSeconds) : null;
   const activeArms = visual.players.map((p) => p.arm);
-  const statusText = visual.status === 'finished'
-    ? 'Game over'
-    : myTurn
-      ? mustMove
-        ? 'Choose a token'
-        : 'Your turn'
-      : `${current?.name ?? ''}'s turn`;
+  const statusText =
+    visual.status === 'finished' ? 'Game over' : myTurn ? (mustMove ? 'Choose a token' : 'Your turn') : `${current?.name ?? ''}'s turn`;
   const diceLabel = pending
     ? 'Rolling…'
     : canRoll
       ? 'Tap to roll'
       : mustMove
-        ? 'Pick a glowing token'
+        ? `Rolled ${visual.turn.dice ?? ''} · pick a token`
         : myTurn
           ? '…'
           : `${current?.name ?? ''} is playing`;
+  const cardProps = (p: PlayerState) => ({
+    player: p,
+    armCount: visual.armCount,
+    isTurn: visual.status === 'playing' && visual.turn.playerId === p.id,
+    isMe: p.id === myId,
+    connected: !online || p.kind === 'bot' || connected[p.id] !== false,
+    timeLeft: timerFraction,
+    emote: emotes.filter((e) => e.playerId === p.id).at(-1)?.emote,
+  });
+  const timerText = secondsLeft !== null && visual.status === 'playing' ? `${Math.ceil(secondsLeft)}s` : null;
+  const currentColor = current ? PLAYER_HEX[current.color] : undefined;
 
   return (
-    <div className={`game-root ${portrait ? 'is-portrait' : 'is-landscape'}`}>
+    <div className={`game-root layout-${layout} ${portrait ? 'is-portrait' : 'is-landscape'}`}>
       <div className="game-canvas" aria-label="Game board" role="img">
-        <Suspense fallback={<div className="game-message"><Spinner label="Preparing the board…" /></div>}>
-          <GameScene
-            armCount={visual.armCount}
-            activeArms={activeArms}
-            quality={quality}
-            onSelect={select}
-            padTop={portrait ? 150 : 70}
-            padBottom={portrait ? 170 : 20}
-          />
-        </Suspense>
+        {webgl ? (
+          <Suspense fallback={<Splash label="Preparing the board…" />}>
+            <GameScene armCount={visual.armCount} activeArms={activeArms} quality={quality} onSelect={select} />
+          </Suspense>
+        ) : (
+          <div className="game-message">
+            <div className="panel">3D graphics are unavailable on this device. You can still play with the move buttons.</div>
+          </div>
+        )}
       </div>
 
       {/* Top bar */}
-      <header className="hud-top">
+      <header className="hud-top" ref={setTopEl}>
         <button className="icon-btn" onClick={() => setLeaving(true)} aria-label="Game menu">
           <span aria-hidden="true">☰</span>
         </button>
-        <div className="hud-title">
-          <span className="hud-room">{title}</span>
-          <span className="hud-turn" style={{ color: current ? PLAYER_HEX[current.color] : undefined }} aria-live="polite">
-            {statusText}
+        {layout === 'desktop' ? (
+          <div className="hud-title">
+            <span className="hud-room">{title}</span>
+            <span className="hud-turn" style={{ color: currentColor }} aria-live="polite">
+              {statusText}
+            </span>
+          </div>
+        ) : (
+          <button
+            className={`turn-pill ${myTurn ? 'is-mine' : ''}`}
+            style={{ ['--pc' as string]: currentColor }}
+            onClick={() => setPlayersOpen(true)}
+            aria-label={`${statusText}${timerText ? `, ${timerText} left` : ''}. Show players`}
+          >
+            {current && <Avatar id={current.avatar} size={30} ring={currentColor} />}
+            <span className="turn-pill-text">
+              <span className="turn-pill-name">{myTurn ? 'You' : current?.name}</span>
+              <span className="hud-turn" aria-live="polite">
+                {statusText}
+              </span>
+            </span>
+            {timerText && <span className={`turn-pill-timer ${myTurn && (secondsLeft ?? 99) <= 5 ? 'is-urgent' : ''}`}>{timerText}</span>}
+          </button>
+        )}
+        {online ? (
+          <ConnectionBadge compact={layout !== 'desktop'} />
+        ) : (
+          <span className="conn conn-good">
+            <i />
+            Solo
           </span>
-        </div>
-        {online ? <ConnectionBadge compact={portrait} /> : <span className="conn conn-good"><i />Solo</span>}
+        )}
       </header>
 
-      {/* Players */}
-      <aside className={`hud-players ${portrait && visual.players.length > 4 ? "is-compact" : ""}`} aria-label="Players">
-        {visual.players.map((p) => (
-          <PlayerCard
-            key={p.id}
-            player={p}
-            armCount={visual.armCount}
-            isTurn={visual.status === 'playing' && visual.turn.playerId === p.id}
-            isMe={p.id === myId}
-            connected={!online || p.kind === 'bot' || connected[p.id] !== false}
-            timeLeft={timerFraction}
-            emote={emotes.filter((e) => e.playerId === p.id).at(-1)?.emote}
-          />
-        ))}
-      </aside>
+      {layout === 'desktop' && (
+        <aside className="hud-players" aria-label="Players">
+          {visual.players.map((p) => (
+            <PlayerCard key={p.id} {...cardProps(p)} />
+          ))}
+        </aside>
+      )}
 
-      {/* Dice tray */}
-      <div className={`dice-tray ${canRoll ? 'is-ready' : ''} ${myTurn ? 'is-mine' : ''}`} style={{ ['--pc' as string]: current ? PLAYER_HEX[current.color] : undefined }}>
-        <button className="dice-button" onClick={roll} disabled={!canRoll} aria-label={canRoll ? 'Roll the dice' : diceLabel}>
-          <Suspense fallback={<span className="dice-fallback">🎲</span>}>
-            <Dice3D />
-          </Suspense>
-        </button>
-        <div className="dice-info">
-          <span className="dice-label">{diceLabel}</span>
-          {secondsLeft !== null && visual.status === 'playing' && (
-            <span className={`dice-timer ${myTurn && secondsLeft <= 5 ? 'is-urgent' : ''}`}>
-              {myTurn ? 'Your turn' : current?.name} · {Math.ceil(secondsLeft)}s
+      {/* Dock: dice/action area (+ players in landscape / player strip in portrait) */}
+      <div className="hud-dock" ref={setDockEl}>
+        {layout === 'landscape' && (
+          <button className="dock-players" onClick={() => setPlayersOpen(true)} aria-label="Show players">
+            {visual.players.map((p) => (
+              <PlayerCard key={p.id} {...cardProps(p)} chip />
+            ))}
+          </button>
+        )}
+
+        <div className={`dice-tray ${canRoll ? 'is-ready' : ''} ${myTurn ? 'is-mine' : ''}`} style={{ ['--pc' as string]: currentColor }}>
+          <button className="dice-button" onClick={roll} disabled={!canRoll} aria-label={canRoll ? 'Roll the dice' : diceLabel}>
+            <Suspense fallback={<span className="dice-fallback">🎲</span>}>{webgl ? <Dice3D /> : <span className="dice-fallback">🎲</span>}</Suspense>
+            {canRoll && <span className="dice-cta">ROLL</span>}
+          </button>
+          <div className="dice-info">
+            <span className="dice-label" aria-live="polite">
+              {diceLabel}
             </span>
-          )}
-        </div>
-        {online && (
-          <div className="emote-wrap">
-            <button className="icon-btn" onClick={() => setEmotesOpen((o) => !o)} aria-expanded={emotesOpen} aria-label="Send an emote">
-              <span aria-hidden="true">☺</span>
-            </button>
-            {emotesOpen && (
-              <div className="emote-palette" role="menu">
-                {LIMITS.emotes.map((e) => (
-                  <button
-                    key={e}
-                    role="menuitem"
-                    onClick={() => {
-                      void directorRef.current?.emote(e);
-                      setEmotesOpen(false);
-                    }}
-                    aria-label={e}
-                  >
-                    {EMOTE_GLYPH[e]}
-                  </button>
-                ))}
-              </div>
+            {timerText && layout === 'desktop' && (
+              <span className={`dice-timer ${myTurn && (secondsLeft ?? 99) <= 5 ? 'is-urgent' : ''}`}>
+                {myTurn ? 'Your turn' : current?.name} · {timerText}
+              </span>
             )}
           </div>
+          {online && (
+            <button className="icon-btn" onClick={() => setEmotesOpen(true)} aria-label="Send an emote">
+              <span aria-hidden="true">☺</span>
+            </button>
+          )}
+        </div>
+
+        {choices.length > 0 && (
+          <div className="move-picker" role="group" aria-label="Choose a move">
+            {choices.map((c) => (
+              <button
+                key={c.key}
+                className="move-chip"
+                style={{ ['--pc' as string]: me ? PLAYER_HEX[me.color] : undefined }}
+                onClick={() => move(c.tokenIndex)}
+                onPointerEnter={() => presentation.setState({ hovered: c.key })}
+                onPointerLeave={() => presentation.setState({ hovered: null })}
+                onFocus={() => presentation.setState({ hovered: c.key })}
+                onBlur={() => presentation.setState({ hovered: null })}
+              >
+                <strong>{c.action}</strong>
+                <span>{c.token}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {portrait && (
+          <button className="player-strip" onClick={() => setPlayersOpen(true)} aria-label="Show players">
+            {visual.players.map((p) => (
+              <PlayerCard key={p.id} {...cardProps(p)} chip />
+            ))}
+          </button>
         )}
       </div>
 
@@ -266,8 +377,40 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
         </div>
       )}
 
+      <AudioHint />
+
       {visual.status === 'finished' && (
         <WinnerOverlay myId={myId} onExit={onExit} onPlayAgain={onPlayAgain} playAgainLabel={playAgainLabel} />
+      )}
+
+      {playersOpen && (
+        <Modal title="Players" onClose={() => setPlayersOpen(false)}>
+          <div className="players-sheet">
+            {visual.players.map((p) => (
+              <PlayerCard key={p.id} {...cardProps(p)} />
+            ))}
+          </div>
+          <p className="hint">{title}</p>
+        </Modal>
+      )}
+
+      {emotesOpen && (
+        <Modal title="Send an emote" onClose={() => setEmotesOpen(false)}>
+          <div className="emote-grid">
+            {LIMITS.emotes.map((e) => (
+              <button
+                key={e}
+                onClick={() => {
+                  void directorRef.current?.emote(e);
+                  setEmotesOpen(false);
+                }}
+                aria-label={e}
+              >
+                {EMOTE_GLYPH[e]}
+              </button>
+            ))}
+          </div>
+        </Modal>
       )}
 
       {leaving && (
@@ -324,20 +467,25 @@ function WinnerOverlay({
     <div className="winner-overlay">
       <div className="winner-card panel" role="dialog" aria-labelledby="winner-title">
         <div className="winner-burst" style={{ ['--pc' as string]: winner ? PLAYER_HEX[winner.color] : undefined }} />
+        <span className="winner-emoji" aria-hidden="true">
+          {iWon ? '🎉' : '🏆'}
+        </span>
         <h1 id="winner-title" className="winner-title">
           {iWon ? 'YOU WIN' : `${winner?.name ?? 'Someone'} wins`}
         </h1>
-        {!iWon && myRank > 0 && <p className="winner-sub">You finished {ORDINAL[myRank - 1]}</p>}
+        <p className="winner-sub">{iWon ? '1st place' : myRank > 0 ? `You finished ${ORDINAL[myRank - 1]}` : ''}</p>
         <ol className="ranking">
           {ranked.map((p, i) => (
             <li key={p.id} className={p.id === myId ? 'is-me' : ''} style={{ ['--pc' as string]: PLAYER_HEX[p.color] }}>
               <span className="ranking-place">{ORDINAL[i]}</span>
-              <Avatar id={p.avatar} size={32} ring={PLAYER_HEX[p.color]} />
+              <Avatar id={p.avatar} size={30} ring={PLAYER_HEX[p.color]} />
               <span className="ranking-name">
                 {p.name}
                 {p.status === 'forfeited' && <em> · left</em>}
               </span>
-              <span className="ranking-stat" title="Captures">⚔ {p.stats.captures}</span>
+              <span className="ranking-stat" title="Captures">
+                ⚔ {p.stats.captures}
+              </span>
             </li>
           ))}
         </ol>
@@ -348,7 +496,7 @@ function WinnerOverlay({
             </button>
           )}
           <button className="btn btn-secondary btn-lg" onClick={onExit}>
-            Main menu
+            Exit
           </button>
         </div>
       </div>

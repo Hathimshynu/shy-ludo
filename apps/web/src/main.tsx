@@ -5,17 +5,27 @@ import '@fontsource-variable/inter';
 import './styles/global.css';
 import './styles/ui.css';
 import './styles/game.css';
+import './styles/mobile.css';
 import { App } from './App';
 
 // Read-only inspection hook for development and end-to-end tests. Never enabled in
 // production builds (VITE_E2E is only set by the Playwright harness).
 if (import.meta.env.DEV || import.meta.env.VITE_E2E === 'true') {
-  void Promise.all([import('./store/gameStore'), import('./store/lobbyStore'), import('./services/socket')]).then(
-    ([game, lobby, socket]) => {
+  void Promise.all([
+    import('./store/gameStore'),
+    import('./store/lobbyStore'),
+    import('./services/socket'),
+    import('./services/pwa'),
+    import('./store/presentationStore'),
+  ]).then(
+    ([game, lobby, socket, pwa, pres]) => {
       (window as unknown as Record<string, unknown>).__ludo = {
         game: () => game.useGame.getState(),
         lobby: () => lobby.useLobby.getState(),
         socket: socket.socketClient,
+        pwa: () => pwa.usePwa.getState(),
+        setPwa: (patch: Record<string, unknown>) => pwa.usePwa.setState(patch),
+        presentation: () => pres.presentation.getState(),
       };
     },
   );

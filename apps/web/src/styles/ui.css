@@ -264,7 +264,7 @@ input[type='range'] {
   position: fixed;
   z-index: 100;
   left: 50%;
-  bottom: max(20px, env(safe-area-inset-bottom));
+  bottom: max(20px, var(--sab));
   transform: translateX(-50%);
   display: grid;
   gap: 8px;
@@ -416,7 +416,7 @@ input[type='range'] {
   align-items: center;
   gap: 16px;
   padding: 12px var(--gutter);
-  padding-top: max(12px, env(safe-area-inset-top));
+  padding-top: max(12px, var(--sat));
   background: linear-gradient(180deg, rgba(8, 6, 26, 0.85), rgba(8, 6, 26, 0.4));
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line);
@@ -506,7 +506,7 @@ input[type='range'] {
   justify-content: space-between;
   gap: 12px;
   padding: 24px var(--gutter);
-  padding-bottom: max(24px, env(safe-area-inset-bottom));
+  padding-bottom: max(24px, var(--sab));
   color: var(--text-faint);
   font-size: 0.86rem;
   border-top: 1px solid var(--line);
@@ -1093,7 +1093,7 @@ input[type='range'] {
   align-items: center;
   justify-content: space-between;
   padding: 16px var(--gutter);
-  padding-top: max(16px, env(safe-area-inset-top));
+  padding-top: max(16px, var(--sat));
   max-width: 1280px;
   margin: 0 auto;
 }

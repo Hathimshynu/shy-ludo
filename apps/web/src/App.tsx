@@ -5,7 +5,9 @@ import { socketClient } from './services/socket';
 import { useAuth } from './store/authStore';
 import { wireLobby } from './store/lobbyStore';
 import { useUi } from './store/uiStore';
-import { Spinner, Toasts } from './components/ui';
+import { IosInstallSheet, Splash, UpdateBanner } from './components/Mobile';
+import { Toasts } from './components/ui';
+import { initPwa } from './services/pwa';
 import { LandingPage } from './pages/Landing';
 
 const PlayPages = () => import('./pages/PlayPages');
@@ -58,6 +60,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean
 function Boot() {
   useEffect(() => {
     wireLobby();
+    initPwa();
     const off = socketClient.onStatus((s) => useUi.getState().setConnection(s));
     void useAuth.getState().init();
     // Browsers only allow audio after a user gesture.
@@ -79,7 +82,7 @@ export function App() {
       <div className="cosmos" aria-hidden="true" />
       <Boot />
       <ErrorBoundary>
-        <Suspense fallback={<div className="game-message"><Spinner label="Loading…" /></div>}>
+        <Suspense fallback={<Splash />}>
           <Routes>
             <Route path="/" element={<LandingPage />} />
             <Route path="/play" element={<MenuPage />} />
@@ -101,6 +104,8 @@ export function App() {
         </Suspense>
       </ErrorBoundary>
       <Toasts />
+      <UpdateBanner />
+      <IosInstallSheet />
     </BrowserRouter>
   );
 }

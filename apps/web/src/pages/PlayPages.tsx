@@ -2,22 +2,41 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import type { AiDifficulty, RoomSettings } from '@ludo/shared-types';
 import { LIMITS } from '@ludo/config';
-import { defaultRoomSettings, DEFAULT_VARIANTS } from '@ludo/game-engine';
+import { defaultRoomSettings } from '@ludo/game-engine';
 import { audio } from '../services/audio';
 import { socketClient } from '../services/socket';
 import type { SoloConfig } from '../game/localHost';
 import { loadSavedSolo } from '../game/workerTransport';
 import { usePageMeta } from '../hooks/usePageMeta';
+import { useMediaQuery, useOnline } from '../hooks/useMedia';
 import { useAuth } from '../store/authStore';
 import { useLobby } from '../store/lobbyStore';
 import { toast } from '../store/uiStore';
 import { Avatar } from '../components/Avatar';
 import { RulesEditor } from '../components/RulesEditor';
 import { Shell } from '../components/Shell';
-import { Field, Segmented, Spinner } from '../components/ui';
+import { InstallButton } from '../components/Mobile';
+import { Field, Modal, Segmented, Spinner } from '../components/ui';
+
+function OfflineNotice() {
+  const online = useOnline();
+  if (online) return null;
+  return (
+    <p className="offline-notice" role="alert">
+      {OFFLINE_MESSAGE}
+    </p>
+  );
+}
+
+export const OFFLINE_MESSAGE = 'You’re offline. Reconnect to the internet to play online.';
 
 /** Ensure we are signed in (as a guest if necessary) and the socket is connected. */
 async function ready(): Promise<boolean> {
+  // Online play never pretends to work offline.
+  if (!navigator.onLine) {
+    toast(OFFLINE_MESSAGE, 'warning', 4000);
+    return false;
+  }
   try {
     await useAuth.getState().ensureSession();
     socketClient.connect();
@@ -62,12 +81,13 @@ function useGameStartRedirect(): void {
 // Main menu
 // ---------------------------------------------------------------------------
 
+// The first four are the primary actions (large, thumb-friendly on phones).
 const TILES = [
   { to: '/online', title: 'Play Online', text: 'Quick match with players worldwide', icon: '🌐', tone: 'gold' },
-  { to: '/friends', title: 'Play With Friends', text: 'Private room with a share code', icon: '👥', tone: 'pink' },
   { to: '/solo', title: 'Play vs AI', text: '1–7 smart opponents, offline-ready', icon: '🤖', tone: 'cyan' },
   { to: '/friends?create=1', title: 'Create Room', text: 'Host and set the rules', icon: '✨', tone: 'violet' },
   { to: '/friends?join=1', title: 'Join Room', text: 'Enter a 6-character code', icon: '🔑', tone: 'green' },
+  { to: '/friends', title: 'Play With Friends', text: 'Private room with a share code', icon: '👥', tone: 'pink' },
   { to: '/leaderboard', title: 'Leaderboard', text: 'Top players by wins & rating', icon: '🏆', tone: 'gold' },
   { to: '/profile', title: 'Profile', text: 'Stats, history and achievements', icon: '🪐', tone: 'violet' },
   { to: '/settings', title: 'Settings', text: 'Sound, music, motion, quality', icon: '⚙️', tone: 'slate' },
@@ -87,7 +107,7 @@ export function MenuPage() {
       </section>
       <nav className="menu-grid" aria-label="Game modes">
         {TILES.map((t, i) => (
-          <Link key={t.title} to={t.to} className={`menu-tile tone-${t.tone} ${i < 3 ? 'is-hero' : ''}`} onClick={() => audio.play('click')}>
+          <Link key={t.title} to={t.to} className={`menu-tile tone-${t.tone} ${i < 4 ? 'is-hero' : ''}`} onClick={() => audio.play('click')}>
             <span className="menu-icon" aria-hidden="true">
               {t.icon}
             </span>
@@ -96,6 +116,13 @@ export function MenuPage() {
           </Link>
         ))}
       </nav>
+      <div className="menu-install">
+        <span>
+          <strong>Install Ludo Nova</strong>
+          <span className="hint">Full-screen play from your home screen</span>
+        </span>
+        <InstallButton />
+      </div>
     </Shell>
   );
 }
@@ -213,6 +240,7 @@ export function OnlinePage() {
     <Shell>
       <div className="setup panel">
         <h1>Play Online</h1>
+        <OfflineNotice />
         <p>Choose a table size and we’ll seat you with other players.</p>
         <div className="size-picker" role="radiogroup" aria-label="Table size">
           {LIMITS.matchmakingSizes.map((n) => (
@@ -303,6 +331,7 @@ export function FriendsPage() {
     <Shell>
       <div className="setup panel">
         <h1>Play With Friends</h1>
+        <OfflineNotice />
         <Segmented
           label="Create or join"
           value={tab}
@@ -356,6 +385,8 @@ export function RoomPage({ code }: { code: string }) {
   const user = useAuth((s) => s.user);
   const [joining, setJoining] = useState(false);
   const [botLevel, setBotLevel] = useState<AiDifficulty>('medium');
+  const [rulesOpen, setRulesOpen] = useState(false);
+  const narrow = useMediaQuery('(max-width: 899px)');
 
   // Arriving by link: join the room.
   useEffect(() => {
@@ -442,6 +473,16 @@ export function RoomPage({ code }: { code: string }) {
           <p className="lobby-count">
             Players: <strong>{room.seats.length}/{room.settings.maxPlayers}</strong>
           </p>
+          <div className="seat-dots" aria-hidden="true">
+            {Array.from({ length: room.settings.maxPlayers }, (_, i) => (
+              <i key={i} className={i < room.seats.length ? 'is-filled' : ''} />
+            ))}
+          </div>
+          {narrow && (
+            <button className="btn btn-secondary btn-block rules-open" onClick={() => setRulesOpen(true)}>
+              Table rules · {room.settings.maxPlayers} players · {room.settings.turnTimeSeconds}s
+            </button>
+          )}
           <ul className="seats">
             {room.seats.map((s, i) => (
               <li key={s.id} className={`seat ${s.ready || s.isHost || s.kind === 'bot' ? 'is-ready' : ''}`} style={{ animationDelay: `${i * 60}ms` }}>
@@ -507,8 +548,9 @@ export function RoomPage({ code }: { code: string }) {
             )}
           </div>
         </section>
-        <aside className="panel lobby-rules">
-          <h2>Table rules</h2>
+        {narrow ? (
+          rulesOpen && (
+            <Modal title="Table rules" onClose={() => setRulesOpen(false)}>
           {!isHost && <p className="hint">Only the host can change the rules.</p>}
           <RulesEditor
             value={room.settings}
@@ -516,10 +558,22 @@ export function RoomPage({ code }: { code: string }) {
             minPlayers={Math.max(2, room.seats.length)}
             onChange={(settings) => void emit('room:settings', { settings })}
           />
-        </aside>
+            </Modal>
+          )
+        ) : (
+          <aside className="panel lobby-rules">
+            <h2>Table rules</h2>
+          {!isHost && <p className="hint">Only the host can change the rules.</p>}
+          <RulesEditor
+            value={room.settings}
+            disabled={!isHost}
+            minPlayers={Math.max(2, room.seats.length)}
+            onChange={(settings) => void emit('room:settings', { settings })}
+          />
+          </aside>
+        )}
       </div>
     </Shell>
   );
 }
 
-export { DEFAULT_VARIANTS };

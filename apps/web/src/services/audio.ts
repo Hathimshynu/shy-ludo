@@ -34,6 +34,22 @@ class AudioEngine {
   private musicTimer: number | null = null;
   private nextBarTime = 0;
   private bar = 0;
+  private readonly listeners = new Set<(unlocked: boolean) => void>();
+
+  /** True once the browser allowed audio (after a user gesture). */
+  get unlocked(): boolean {
+    return this.ctx?.state === 'running';
+  }
+
+  onUnlockChange(fn: (unlocked: boolean) => void): () => void {
+    this.listeners.add(fn);
+    return () => this.listeners.delete(fn);
+  }
+
+  private emitUnlock(): void {
+    const v = this.unlocked;
+    this.listeners.forEach((l) => l(v));
+  }
 
   /** Must be called from a user gesture at least once (autoplay policies). */
   unlock(): void {
@@ -53,8 +69,10 @@ class AudioEngine {
       this.musicBus.connect(lp).connect(this.master);
       this.noise = this.makeNoise();
       this.applyVolumes();
+      this.ctx.addEventListener('statechange', () => this.emitUnlock());
     }
-    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    if (this.ctx.state === 'suspended') void this.ctx.resume().then(() => this.emitUnlock(), () => undefined);
+    else this.emitUnlock();
     if (this.musicEnabled) this.startMusic();
   }
 

@@ -5,19 +5,46 @@ import { type ReactNode, Suspense, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { type ArmCount, createBoard } from '@ludo/game-engine';
 import { presentation, usePresentation } from '../store/presentationStore';
+import type { QualityTier } from '../services/device';
 import { useSettings } from '../store/settingsStore';
 import { Board } from './Board';
 import { Celebration, Effects } from './Effects';
 import { Tokens } from './Tokens';
 
-export type QualityLevel = 'high' | 'medium' | 'low';
+export type QualityLevel = QualityTier;
 
-/** Keeps the whole board in view for any aspect ratio, with subtle cinematic motion. */
-function CameraRig({ armCount, padTop = 0, padBottom = 0 }: { armCount: number; padTop?: number; padBottom?: number }) {
+/** Per-tier rendering budget (see README → Graphics quality). */
+export const TIERS: Record<QualityLevel, {
+  dpr: [number, number];
+  shadows: boolean;
+  shadowMap: number;
+  reflections: number;
+  particles: number;
+  bloom: 'none' | 'light' | 'full';
+  msaa: number;
+  fps: number | null;
+}> = {
+  low: { dpr: [0.75, 1], shadows: false, shadowMap: 0, reflections: 0, particles: 0, bloom: 'none', msaa: 0, fps: 30 },
+  medium: { dpr: [1, 1.5], shadows: true, shadowMap: 1024, reflections: 64, particles: 120, bloom: 'light', msaa: 0, fps: null },
+  high: { dpr: [1, 2], shadows: true, shadowMap: 2048, reflections: 128, particles: 240, bloom: 'full', msaa: 4, fps: null },
+  ultra: { dpr: [1, 2.5], shadows: true, shadowMap: 4096, reflections: 256, particles: 420, bloom: 'full', msaa: 8, fps: null },
+};
+
+/**
+ * Responsive framing. The HUD reports how many pixels it covers on each side
+ * (presentation.insets); the board is fitted into the remaining rectangle:
+ *
+ *   viewport → minus safe areas & HUD (insets) → free rectangle → camera distance
+ *   (fit both axes) → setViewOffset() moves the projection centre into that rectangle.
+ *
+ * Subtle motion (focus, shake, parallax on fine pointers) is disabled by Reduce Animations.
+ */
+function CameraRig({ armCount }: { armCount: number }) {
   const { camera, size } = useThree();
   const pointer = useRef(new THREE.Vector2());
   const target = useRef(new THREE.Vector3());
   const tmp = useMemo(() => new THREE.Vector3(), []);
+  const lastView = useRef('');
 
   useFrame((state, dt) => {
     const cam = camera as THREE.PerspectiveCamera;
@@ -25,23 +52,35 @@ function CameraRig({ armCount, padTop = 0, padBottom = 0 }: { armCount: number; 
     const reduce = useSettings.getState().reduceMotion;
     const board = createBoard(armCount as ArmCount);
     const extent = armCount === 4 ? board.boardApothem + 1.0 : (board.boardApothem + 1.0) / Math.cos(Math.PI / armCount);
-    const aspect = size.width / Math.max(1, size.height);
-    const portrait = aspect < 0.9;
-    // Steeper (more top-down) on portrait phones so the board fills the width.
-    const elevation = THREE.MathUtils.degToRad(portrait ? 70 : 56);
-    const vFov = THREE.MathUtils.degToRad(cam.fov / 2);
-    const usable = Math.max(0.35, 1 - (padTop + padBottom) / Math.max(1, size.height));
-    const hFov = Math.atan(Math.tan(vFov) * aspect);
-    const needV = (extent * (Math.sin(elevation) + 0.18)) / (Math.tan(vFov) * usable);
-    const needH = (extent * 1.04) / Math.tan(hFov);
+    const W = Math.max(1, size.width);
+    const H = Math.max(1, size.height);
+    const { top, right, bottom, left } = s.insets;
+    const freeW = Math.max(120, W - left - right);
+    const freeH = Math.max(120, H - top - bottom);
+    const margin = 10;
+    const fitW = Math.max(100, freeW - margin * 2);
+    const fitH = Math.max(100, freeH - margin * 2);
+    // Steeper (more top-down) when the free area is tall, so the board fills the width.
+    const elevation = THREE.MathUtils.degToRad(fitW / fitH < 0.95 ? 70 : 56);
+    const tanV = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+    // World half-extent visible at distance d spans H/2 pixels vertically (and W/2 horizontally).
+    const needV = (extent * (Math.sin(elevation) + 0.18)) / (tanV * (fitH / H));
+    const needH = (extent * 1.04) / (tanV * (fitW / H));
     let dist = Math.max(needV, needH);
 
     const now = performance.now();
     const celebrating = s.winnerId && now - s.celebrateAt < 7000;
-    if (celebrating && !reduce) dist *= 0.9;
+    if (celebrating && !reduce) dist *= 0.92;
 
-    // Board centre shifted so it sits in the area between HUD bars.
-    const shift = ((padBottom - padTop) / Math.max(1, size.height)) * Math.tan(vFov) * dist * 0.9;
+    // Move the projection centre to the middle of the free rectangle.
+    const dx = left + freeW / 2 - W / 2;
+    const dy = top + freeH / 2 - H / 2;
+    const key = `${W}x${H}:${dx.toFixed(1)},${dy.toFixed(1)}`;
+    if (key !== lastView.current) {
+      lastView.current = key;
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) cam.clearViewOffset();
+      else cam.setViewOffset(W, H, -dx, -dy, W, H);
+    }
 
     let tx = 0;
     let tz = 0;
@@ -70,9 +109,10 @@ function CameraRig({ armCount, padTop = 0, padBottom = 0 }: { armCount: number; 
       }
       const flashAge = now - s.flash.at;
       if (flashAge < 260) cam.position.y -= Math.sin((flashAge / 260) * Math.PI) * 0.12;
-      if (!('ontouchstart' in window)) pointer.current.lerp(state.pointer, 0.05);
+      // Pointer parallax only for mouse/trackpad — never on touch screens.
+      if (!window.matchMedia('(pointer: coarse)').matches) pointer.current.lerp(state.pointer, 0.05);
     }
-    cam.lookAt(target.current.x, 0, target.current.z - shift);
+    cam.lookAt(target.current.x, 0, target.current.z);
   });
   return null;
 }
@@ -94,7 +134,8 @@ function Lights({ quality }: { quality: QualityLevel }) {
     }
     if (rim.current) rim.current.intensity = 0.9 + Math.sin(t * 0.7) * 0.15;
   });
-  const shadowSize = quality === 'high' ? 2048 : 1024;
+  const tier = TIERS[quality];
+  const shadowSize = Math.max(512, tier.shadowMap);
   return (
     <>
       <ambientLight intensity={0.32} color="#9a90ff" />
@@ -102,7 +143,7 @@ function Lights({ quality }: { quality: QualityLevel }) {
       <directionalLight
         position={[6, 16, 9]}
         intensity={1.9}
-        castShadow={quality !== 'low'}
+        castShadow={tier.shadows}
         shadow-mapSize={[shadowSize, shadowSize]}
         shadow-camera-left={-13}
         shadow-camera-right={13}
@@ -169,9 +210,9 @@ function AmbientParticles({ count }: { count: number }) {
   return <points geometry={geometry} material={material} frustumCulled={false} />;
 }
 
-function Reflections() {
+function Reflections({ resolution }: { resolution: number }) {
   return (
-    <Environment resolution={128} frames={1}>
+    <Environment resolution={resolution} frames={1}>
       <Lightformer form="ring" intensity={2} color="#ffffff" position={[0, 6, 0]} scale={8} rotation-x={Math.PI / 2} />
       <Lightformer form="rect" intensity={3} color="#a66bff" position={[-8, 3, -4]} scale={[6, 4, 1]} rotation-y={Math.PI / 3} />
       <Lightformer form="rect" intensity={3} color="#2fe0e8" position={[8, 3, 4]} scale={[6, 4, 1]} rotation-y={-Math.PI / 3} />
@@ -215,21 +256,20 @@ export interface SceneProps {
   activeArms?: number[];
   quality: QualityLevel;
   onSelect?: (playerId: string, index: number) => void;
-  padTop?: number;
-  padBottom?: number;
   children?: ReactNode;
   showTokens?: boolean;
 }
 
-export function GameScene({ armCount, activeArms, quality, onSelect, padTop, padBottom, children, showTokens = true }: SceneProps) {
+export function GameScene({ armCount, activeArms, quality, onSelect, children, showTokens = true }: SceneProps) {
   const reduce = useSettings((s) => s.reduceMotion);
   const rotation = usePresentation((s) => s.rotation);
-  const particles = reduce ? 0 : quality === 'high' ? 260 : quality === 'medium' ? 140 : 0;
+  const tier = TIERS[quality];
+  const particles = reduce ? 0 : tier.particles;
   return (
     <Canvas
-      shadows={quality !== 'low'}
-      dpr={quality === 'high' ? [1, 2] : quality === 'medium' ? [1, 1.5] : [0.85, 1]}
-      gl={{ antialias: quality !== 'high', powerPreference: 'high-performance', alpha: true, stencil: false }}
+      shadows={tier.shadows}
+      dpr={tier.dpr}
+      gl={{ antialias: tier.msaa === 0, powerPreference: 'high-performance', alpha: true, stencil: false }}
       camera={{ fov: 36, position: [0, 18, 12], near: 0.5, far: 120 }}
       onCreated={({ gl }) => {
         gl.toneMapping = THREE.ACESFilmicToneMapping;
@@ -237,25 +277,25 @@ export function GameScene({ armCount, activeArms, quality, onSelect, padTop, pad
       }}
       onPointerMissed={() => presentation.setState({ hovered: null })}
     >
-      <FramePacer fps={quality === 'low' ? 30 : null} />
-      <CameraRig armCount={armCount} padTop={padTop} padBottom={padBottom} />
+      <FramePacer fps={tier.fps} />
+      <CameraRig armCount={armCount} />
       <Lights quality={quality} />
-      <Suspense fallback={null}>{quality !== 'low' && <Reflections />}</Suspense>
+      <Suspense fallback={null}>{tier.reflections > 0 && <Reflections resolution={tier.reflections} />}</Suspense>
       <group rotation-y={rotation}>
         <Board armCount={armCount} activeArms={activeArms} quality={quality} />
-        {showTokens && <Tokens onSelect={onSelect ?? (() => undefined)} />}
-        <Effects />
+        {showTokens && <Tokens onSelect={onSelect ?? (() => undefined)} cheap={quality === 'low'} />}
+        <Effects quality={quality} />
         {children}
       </group>
       <AmbientParticles count={particles} />
       <Celebration quality={quality} />
-      {quality === 'high' && !reduce && (
-        <EffectComposer multisampling={4}>
-          <Bloom mipmapBlur luminanceThreshold={0.85} luminanceSmoothing={0.2} intensity={0.75} />
+      {tier.bloom === 'full' && !reduce && (
+        <EffectComposer multisampling={tier.msaa}>
+          <Bloom mipmapBlur luminanceThreshold={0.85} luminanceSmoothing={0.2} intensity={quality === 'ultra' ? 0.85 : 0.75} />
           <Vignette eskil={false} offset={0.25} darkness={0.55} />
         </EffectComposer>
       )}
-      {quality === 'medium' && !reduce && (
+      {tier.bloom === 'light' && !reduce && (
         <EffectComposer multisampling={0}>
           <Bloom mipmapBlur luminanceThreshold={0.9} intensity={0.55} />
         </EffectComposer>

@@ -47,23 +47,32 @@ function geometries() {
 }
 
 const materialCache = new Map<string, { body: THREE.MeshPhysicalMaterial; collar: THREE.MeshBasicMaterial }>();
-function materialsFor(color: string, out: boolean) {
-  const key = `${color}|${out}`;
+/** `cheap` (LOW tier) swaps the clear-coated physical material for a standard one. */
+function materialsFor(color: string, out: boolean, cheap: boolean) {
+  const key = `${color}|${out}|${cheap}`;
   let m = materialCache.get(key);
   if (!m) {
     const base = new THREE.Color(out ? '#6f6a8f' : color);
     m = {
-      body: new THREE.MeshPhysicalMaterial({
-        color: base,
-        roughness: 0.16,
-        metalness: 0.08,
-        clearcoat: 1,
-        clearcoatRoughness: 0.08,
-        sheen: 0.4,
-        sheenColor: new THREE.Color('#ffffff'),
-        emissive: base,
-        emissiveIntensity: out ? 0 : 0.14,
-      }),
+      body: cheap
+        ? (new THREE.MeshStandardMaterial({
+            color: base,
+            roughness: 0.25,
+            metalness: 0.1,
+            emissive: base,
+            emissiveIntensity: out ? 0 : 0.2,
+          }) as THREE.MeshPhysicalMaterial)
+        : new THREE.MeshPhysicalMaterial({
+            color: base,
+            roughness: 0.16,
+            metalness: 0.08,
+            clearcoat: 1,
+            clearcoatRoughness: 0.08,
+            sheen: 0.4,
+            sheenColor: new THREE.Color('#ffffff'),
+            emissive: base,
+            emissiveIntensity: out ? 0 : 0.14,
+          }),
       collar: new THREE.MeshBasicMaterial({ color: out ? '#8a85a8' : base.clone().lerp(new THREE.Color('#ffffff'), 0.45), toneMapped: false }),
     };
     materialCache.set(key, m);
@@ -80,12 +89,19 @@ const ONE = new THREE.Vector3(1, 1, 1);
 const TARGET = new THREE.Vector3();
 const easeInOut = (u: number) => (u < 0.5 ? 2 * u * u : 1 - (-2 * u + 2) ** 2 / 2);
 
+const WHITE = new THREE.Color('#ffffff');
+const TINT = new THREE.Color();
+const SELECT_MS = 650;
+/** Touch screens get a larger invisible hit target. */
+const COARSE = typeof window !== 'undefined' && (window.matchMedia?.('(pointer: coarse)').matches ?? false);
+
 interface TokenProps {
   tokenKey: string;
   onSelect: (playerId: string, index: number) => void;
+  cheap: boolean;
 }
 
-const Token = memo(function Token({ tokenKey, onSelect }: TokenProps) {
+const Token = memo(function Token({ tokenKey, onSelect, cheap }: TokenProps) {
   const g = geometries();
   const group = useRef<THREE.Group>(null);
   const body = useRef<THREE.Group>(null);
@@ -98,7 +114,7 @@ const Token = memo(function Token({ tokenKey, onSelect }: TokenProps) {
   const color = usePresentation((s) => s.tokens[tokenKey]?.color ?? '#ffffff');
   const out = usePresentation((s) => s.tokens[tokenKey]?.out ?? false);
   const selectable = usePresentation((s) => s.selectable.includes(tokenKey));
-  const mats = useMemo(() => materialsFor(color, out), [color, out]);
+  const mats = useMemo(() => materialsFor(color, out, cheap), [color, out, cheap]);
   const shadowMat = useMemo(() => shadowMaterial.clone(), []);
 
   useFrame(({ clock }, dt) => {
@@ -170,17 +186,22 @@ const Token = memo(function Token({ tokenKey, onSelect }: TokenProps) {
     initialised.current = true;
 
     const hovered = s.hovered === tokenKey && selectable;
+    // Selection feedback: a white ring and a quick scale pop the instant a token is picked.
+    const selAge = s.selected?.key === tokenKey ? now - s.selected.at : Infinity;
+    const selected = selAge < SELECT_MS;
+    const pop = selected && !reduce ? Math.sin((selAge / SELECT_MS) * Math.PI) * 0.22 : 0;
     group.current.position.set(x, y, z);
-    const k = scale * (hovered ? 1.14 : 1);
+    const k = scale * (hovered ? 1.14 : 1) * (1 + pop);
     group.current.scale.setScalar(k);
     body.current.rotation.y = spin + (selectable && !reduce ? Math.sin(time * 2) * 0.25 : 0);
 
     if (ring.current && ringMat.current) {
-      ring.current.visible = selectable;
-      if (selectable) {
-        const pulse = reduce ? 1 : 1 + Math.sin(time * 6) * 0.12;
+      ring.current.visible = selectable || selected;
+      if (selectable || selected) {
+        const pulse = reduce ? 1 : selected ? 1.15 + pop : 1 + Math.sin(time * 6) * 0.12;
         ring.current.scale.setScalar(pulse);
-        ringMat.current.opacity = 0.55 + Math.sin(time * 6) * 0.3;
+        ringMat.current.color.copy(selected ? WHITE : TINT.set(color));
+        ringMat.current.opacity = selected ? 0.95 : 0.55 + Math.sin(time * 6) * 0.3;
         ring.current.position.y = -(y - t.rest.y) / k + 0.02;
       }
     }
@@ -226,6 +247,7 @@ const Token = memo(function Token({ tokenKey, onSelect }: TokenProps) {
         geometry={g.hit}
         material={hitMaterial}
         position-y={0.45}
+        scale={COARSE ? [1.25, 1, 1.25] : 1}
         raycast={selectable ? THREE.Mesh.prototype.raycast : () => undefined}
         onPointerOver={handleOver}
         onPointerOut={handleOut}
@@ -235,12 +257,12 @@ const Token = memo(function Token({ tokenKey, onSelect }: TokenProps) {
   );
 });
 
-export function Tokens({ onSelect }: { onSelect: (playerId: string, index: number) => void }) {
+export function Tokens({ onSelect, cheap = false }: { onSelect: (playerId: string, index: number) => void; cheap?: boolean }) {
   const keys = usePresentation((s) => s.tokenKeys);
   return (
     <group>
       {keys.map((k) => (
-        <Token key={k} tokenKey={k} onSelect={onSelect} />
+        <Token key={k} tokenKey={k} onSelect={onSelect} cheap={cheap} />
       ))}
     </group>
   );

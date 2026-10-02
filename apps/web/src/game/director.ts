@@ -1,6 +1,7 @@
 import type { AppError, GameEvent, GameSnapshotMessage, GameState, PlayerState } from '@ludo/shared-types';
 import { applyEvent, applyEvents, finishProgress, createBoard, type ArmCount, isSafeSquare, progressToSquare } from '@ludo/game-engine';
 import { audio } from '../services/audio';
+import { haptic } from '../services/haptics';
 import { useGame, selectCanAct } from '../store/gameStore';
 import {
   addEffect,
@@ -261,6 +262,7 @@ export class GameDirector {
         addEffect({ kind: 'burst', x: from.x, y: from.y + 0.3, z: from.z, color: attackColor, dur: 900 });
         presentation.setState({ shake: performance.now(), flash: { color: attackColor, at: performance.now() } });
         if (sound) audio.play('capture');
+        if (e.payload.by.playerId === this.myId || v.playerId === this.myId) haptic('capture');
         if (!skip) {
           this.patchToken(key, { anim: { kind: 'capture', points: [from, to], start: performance.now() + 120, stepMs: t.capture, hop: 2.2 } });
         }
@@ -288,7 +290,10 @@ export class GameDirector {
         break;
       case 'TURN_CHANGED':
         await this.wait(t.beat, skip);
-        if (e.payload.playerId === this.myId && sound) audio.play('yourTurn');
+        if (e.payload.playerId === this.myId) {
+          if (sound) audio.play('yourTurn');
+          haptic('yourTurn');
+        }
         break;
       case 'PLAYER_FINISHED':
         this.showBanner(
@@ -305,6 +310,7 @@ export class GameDirector {
       case 'GAME_FINISHED':
         presentation.setState({ winnerId: e.payload.winnerId, celebrateAt: performance.now() });
         if (sound) audio.play('win');
+        if (e.payload.winnerId === this.myId) haptic('win');
         break;
     }
     const next = applyEvent(visual, e);
@@ -338,7 +344,9 @@ export class GameDirector {
   async roll(): Promise<void> {
     const g = useGame.getState();
     if (!selectCanAct(g) || g.visual!.turn.phase !== 'roll') return;
+    // setPending() runs synchronously, so a second tap in the same frame is ignored above.
     this.setPending();
+    haptic('roll');
     const me = g.visual!.players.find((p) => p.id === this.myId)!;
     presentation.setState((s) => ({ dice: { ...s.dice, spinning: true, color: PLAYER_HEX[me.color], by: this.myId } }));
     audio.play('diceRoll');
@@ -354,7 +362,8 @@ export class GameDirector {
       return;
     }
     this.setPending();
-    presentation.setState({ selectable: [] });
+    haptic('select');
+    presentation.setState({ selectable: [], selected: { key: tokenKey(this.myId, tokenIndex), at: performance.now() } });
     const r = await this.transport.move(tokenIndex, g.state!.seq);
     this.handleAck(r);
   }

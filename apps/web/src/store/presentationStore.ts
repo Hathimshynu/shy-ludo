@@ -61,6 +61,10 @@ export interface PresentationState {
   focus: { x: number; z: number; at: number } | null;
   winnerId: string | null;
   celebrateAt: number;
+  /** Pixels of the viewport covered by HUD on each side; the camera frames the board in the rest. */
+  insets: { top: number; right: number; bottom: number; left: number };
+  /** Token the player just picked (selection feedback before it moves). */
+  selected: { key: string; at: number } | null;
 }
 
 export const initialPresentation = (): PresentationState => ({
@@ -78,6 +82,8 @@ export const initialPresentation = (): PresentationState => ({
   focus: null,
   winnerId: null,
   celebrateAt: -1e9,
+  insets: { top: 0, right: 0, bottom: 0, left: 0 },
+  selected: null,
 });
 
 export const presentation = createStore<PresentationState>()(() => initialPresentation());

@@ -4,19 +4,29 @@ import type { GameHistoryEntry, LeaderboardCategory, LeaderboardResponse, Profil
 import { LIMITS } from '@ludo/config';
 import { ApiError, api } from '../services/api';
 import { audio } from '../services/audio';
+import { deviceProfile } from '../services/device';
+import { haptic, hapticsSupported } from '../services/haptics';
 import { PLAYER_HEX } from '../game/layout';
 import { ORDINAL } from '../game/director';
 import { usePageMeta } from '../hooks/usePageMeta';
 import { useAuth } from '../store/authStore';
-import { type Quality, useSettings } from '../store/settingsStore';
+import { type Quality, resolveQuality, useSettings } from '../store/settingsStore';
 import { toast } from '../store/uiStore';
 import { AVATAR_IDS, Avatar } from '../components/Avatar';
+import { InstallButton } from '../components/Mobile';
 import { Shell } from '../components/Shell';
 import { Field, Segmented, Spinner, Switch } from '../components/ui';
 
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
+
+/** On phones the on-screen keyboard can cover the focused field: scroll it into view once the keyboard is up. */
+function keepFocusedInView(e: React.FocusEvent<HTMLFormElement>): void {
+  const el = e.target as HTMLElement;
+  if (!(el instanceof HTMLInputElement)) return;
+  window.setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 320);
+}
 
 export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   usePageMeta({ title: mode === 'login' ? 'Sign in' : 'Create account', path: `/${mode}` });
@@ -69,20 +79,20 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
 
   return (
     <Shell>
-      <form className="setup panel auth" onSubmit={submit} noValidate>
+      <form className="setup panel auth" onSubmit={submit} noValidate onFocusCapture={keepFocusedInView}>
         <h1>{mode === 'login' ? 'Welcome back' : upgrading ? 'Save your progress' : 'Create your account'}</h1>
         <p>{mode === 'login' ? 'Sign in to keep your stats, rating and achievements.' : 'Pick a username — you can change your display name later.'}</p>
         {mode === 'login' ? (
           <Field label="Username or email" error={errors.login}>
-            <input className="input" autoComplete="username" value={form.login} onChange={set('login')} required />
+            <input className="input" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="next" value={form.login} onChange={set('login')} required />
           </Field>
         ) : (
           <>
             <Field label="Username" error={errors.username}>
-              <input className="input" autoComplete="username" value={form.username} onChange={set('username')} minLength={LIMITS.usernameMin} maxLength={LIMITS.usernameMax} required />
+              <input className="input" autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} enterKeyHint="next" value={form.username} onChange={set('username')} minLength={LIMITS.usernameMin} maxLength={LIMITS.usernameMax} required />
             </Field>
             <Field label="Email (optional)" error={errors.email}>
-              <input className="input" type="email" autoComplete="email" value={form.email} onChange={set('email')} />
+              <input className="input" type="email" inputMode="email" autoComplete="email" autoCapitalize="none" enterKeyHint="next" value={form.email} onChange={set('email')} />
             </Field>
           </>
         )}
@@ -90,6 +100,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           <input
             className="input"
             type="password"
+            enterKeyHint="go"
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             value={form.password}
             onChange={set('password')}
@@ -351,6 +362,14 @@ export function LeaderboardPage() {
 // Settings
 // ---------------------------------------------------------------------------
 
+const TIER_LABEL = { low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' } as const;
+const TIER_HINT = {
+  low: 'Low: no bloom, shadows or particles, 30 fps cap — best for older phones and battery life.',
+  medium: 'Medium: soft shadows, light bloom, fewer particles.',
+  high: 'High: full lighting, bloom, reflections and particles.',
+  ultra: 'Ultra: sharper shadows, higher resolution and extra effects for powerful GPUs.',
+} as const;
+
 export function SettingsPage() {
   usePageMeta({ title: 'Settings', noindex: true });
   const s = useSettings();
@@ -369,24 +388,52 @@ export function SettingsPage() {
           <span>Music volume</span>
           <input type="range" min={0} max={1} step={0.05} value={s.musicVolume} onChange={(e) => s.set({ musicVolume: Number(e.target.value) })} />
         </label>
+        <Switch
+          label="Haptic feedback"
+          hint={hapticsSupported() ? 'Subtle vibration on rolls, picks, captures and wins' : 'Not supported by this browser'}
+          checked={s.haptics}
+          disabled={!hapticsSupported()}
+          onChange={(haptics) => {
+            s.set({ haptics });
+            if (haptics) haptic('tap');
+          }}
+        />
         <h2 className="settings-h">Visuals</h2>
         <Switch label="Reduce animations" hint="Fewer particles, no camera motion, faster moves, no post-processing" checked={s.reduceMotion} onChange={(reduceMotion) => s.set({ reduceMotion })} />
         <div className="rules-row">
-          <span className="rules-label">Graphics quality</span>
+          <span className="rules-label">
+            Graphics quality
+            <span className="hint quality-detected">Auto picks {TIER_LABEL[deviceProfile().recommended]} on this device</span>
+          </span>
           <Segmented<Quality>
             label="Graphics quality"
             value={s.quality}
             onChange={(quality) => s.set({ quality })}
             options={[
               { value: 'auto', label: 'Auto' },
-              { value: 'high', label: 'High' },
-              { value: 'medium', label: 'Medium' },
               { value: 'low', label: 'Low' },
+              { value: 'medium', label: 'Medium' },
+              { value: 'high', label: 'High' },
+              { value: 'ultra', label: 'Ultra' },
             ]}
           />
         </div>
+        <p className="hint">{TIER_HINT[resolveQuality(s.quality)]}</p>
         <h2 className="settings-h">Social</h2>
         <Switch label="Show emotes" checked={s.showEmotes} onChange={(showEmotes) => s.set({ showEmotes })} />
+        <h2 className="settings-h">App</h2>
+        <div className="settings-row">
+          <span>Language</span>
+          <span className="hint">English</span>
+        </div>
+        <div className="settings-row">
+          <span>Install app</span>
+          <InstallButton />
+        </div>
+        <Link to="/how-to-play" className="settings-row settings-link">
+          <span>How to Play</span>
+          <span aria-hidden="true">›</span>
+        </Link>
       </div>
     </Shell>
   );

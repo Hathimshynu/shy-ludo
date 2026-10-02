@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../store/authStore';
 import { useLobby } from '../store/lobbyStore';
 import { Avatar } from './Avatar';
+import { BottomNav, InstallPrompt, OfflineBanner } from './Mobile';
 import { ConnectionBadge, Logo } from './ui';
 
 function RejoinBanner() {
@@ -49,6 +50,7 @@ export function Shell({ children, wide = false }: { children: ReactNode; wide?: 
           )}
         </div>
       </header>
+      <OfflineBanner />
       <RejoinBanner />
       <main className={wide ? 'page page-wide' : 'page'}>{children}</main>
       <footer className="footer">
@@ -59,6 +61,8 @@ export function Shell({ children, wide = false }: { children: ReactNode; wide?: 
           <Link to="/settings">Settings</Link>
         </nav>
       </footer>
+      <InstallPrompt />
+      <BottomNav />
     </div>
   );
 }

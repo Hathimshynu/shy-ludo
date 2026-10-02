@@ -14,6 +14,10 @@ interface Props {
   /** 0..1 of the turn timer remaining, or null when no timer. */
   timeLeft: number | null;
   emote?: string | undefined;
+  /** Smaller row for side panels. */
+  compact?: boolean;
+  /** Minimal avatar chip for the portrait player strip. */
+  chip?: boolean;
 }
 
 const EMOTE_GLYPH: Record<string, string> = {
@@ -27,16 +31,29 @@ const EMOTE_GLYPH: Record<string, string> = {
   cry: '😢',
 };
 
-export const PlayerCard = memo(function PlayerCard({ player, armCount, isTurn, isMe, connected, timeLeft, emote }: Props) {
+export const PlayerCard = memo(function PlayerCard({ player, armCount, isTurn, isMe, connected, timeLeft, emote, compact, chip }: Props) {
   const finish = finishProgress(createBoard(armCount as ArmCount));
   const home = player.tokens.filter((t) => t >= finish).length;
   const base = player.tokens.filter((t) => t < 0).length;
   const color = PLAYER_HEX[player.color];
   const out = player.status === 'forfeited';
-  const classes = ['player-card', isTurn && 'is-turn', isMe && 'is-me', !connected && 'is-offline', out && 'is-out']
+  const classes = ['player-card', compact && 'is-compact', chip && 'is-chip', isTurn && 'is-turn', isMe && 'is-me', !connected && 'is-offline', out && 'is-out']
     .filter(Boolean)
     .join(' ');
   const ring = timeLeft !== null && isTurn ? timeLeft : null;
+  if (chip) {
+    return (
+      <span className={classes} style={{ ['--pc' as string]: color }} title={player.name}>
+        <span className="pc-avatar">
+          <Avatar id={player.avatar} size={30} ring={color} />
+          {emote && <span className="pc-emote">{EMOTE_GLYPH[emote] ?? '✨'}</span>}
+        </span>
+        <span className="pc-chip-meta">
+          {player.rank !== null && player.status === 'finished' ? ORDINAL[player.rank - 1] : out ? 'Left' : !connected ? 'Off' : `★${home}`}
+        </span>
+      </span>
+    );
+  }
   return (
     <div className={classes} style={{ ['--pc' as string]: color }} aria-current={isTurn ? 'true' : undefined}>
       <div className="pc-avatar">

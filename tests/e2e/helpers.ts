@@ -11,7 +11,14 @@ interface LudoHook {
     paused: boolean;
   };
   lobby: () => { room: { code: string } | null };
-  socket: { emit: (event: string, payload: unknown) => Promise<{ ok: boolean; error?: { code: string } }> };
+  socket: { emit: (event: string, payload: unknown) => Promise<{ ok: boolean; error?: { code: string } }>; connected: boolean };
+  pwa: () => { platform: string; standalone: boolean; canInstall: boolean; installed: boolean; updateReady: boolean };
+  setPwa: (patch: Record<string, unknown>) => void;
+  presentation: () => {
+    insets: { top: number; right: number; bottom: number; left: number };
+    selected: { key: string; at: number } | null;
+    dice: { value: number | null };
+  };
 }
 
 declare global {
@@ -78,7 +85,7 @@ export async function actViaUi(page: Page): Promise<boolean> {
     const legal = await page.evaluate(() => window.__ludo!.game().visual!.turn.legalMoves.map((m) => m.tokenIndex));
     await page.keyboard.press(String(legal[0]! + 1));
   }
-  await page.waitForFunction((seq) => (window.__ludo?.game().state?.seq ?? 0) > seq, before, { timeout: 20_000 });
+  await page.waitForFunction((seq) => (window.__ludo?.game().state?.seq ?? 0) > seq, before, { timeout: 20_000, polling: 200 });
   return true;
 }
 
@@ -102,7 +109,7 @@ export async function actViaSocket(page: Page): Promise<boolean> {
     return r.ok ? 'OK' : r.error!.code;
   });
   if (result !== 'OK') return result === 'STALE_STATE' || result === 'RATE_LIMITED';
-  await page.waitForFunction((seq) => (window.__ludo?.game().state?.seq ?? 0) > seq, before, { timeout: 30_000 });
+  await page.waitForFunction((seq) => (window.__ludo?.game().state?.seq ?? 0) > seq, before, { timeout: 30_000, polling: 200 });
   return true;
 }
 
@@ -130,7 +137,7 @@ export async function playUntil(
 /** Wait until every page shows the same authoritative state (same seq), then compare them. */
 export async function expectSynchronised(pages: Page[]): Promise<GameState> {
   await expect
-    .poll(async () => new Set(await Promise.all(pages.map(async (p) => (await gameState(p))?.seq))).size, { timeout: 30_000 })
+    .poll(async () => new Set(await Promise.all(pages.map(async (p) => (await gameState(p))?.seq))).size, { timeout: 30_000, polling: 200 })
     .toBe(1);
   const states = await Promise.all(pages.map(gameState));
   for (const s of states) expect(s).toEqual(states[0]);

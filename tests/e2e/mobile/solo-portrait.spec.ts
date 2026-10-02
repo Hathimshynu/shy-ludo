@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { actViaUi, gameState } from './helpers';
+import { actViaUi, gameState } from '../helpers';
 
 test('mobile portrait: solo game is playable with touch and the page does not scroll', async ({ page }) => {
   await page.addInitScript(() => {

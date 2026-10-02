@@ -1,9 +1,12 @@
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, Navigate } from 'react-router-dom';
 import { BRAND } from '@ludo/config';
 import { usePageMeta } from '../hooks/usePageMeta';
+import { deviceProfile } from '../services/device';
+import { isStandalone, usePwa } from '../services/pwa';
 import { Logo } from '../components/ui';
 import { useAuth } from '../store/authStore';
+import { resolveQuality, useSettings } from '../store/settingsStore';
 
 const LandingBoard = lazy(() => import('../three/LandingBoard'));
 
@@ -41,6 +44,15 @@ export function LandingPage() {
   usePageMeta({ path: '/', description: BRAND.description });
   const [boardRef, showBoard] = useDeferredMount();
   const user = useAuth((s) => s.user);
+  const quality = useSettings((s) => s.quality);
+  const reduceMotion = useSettings((s) => s.reduceMotion);
+  // Weak devices, data-saver and reduced motion get a static poster instead of WebGL.
+  const lightweight = useMemo(() => {
+    const p = deviceProfile();
+    return reduceMotion || p.saveData || !p.webgl || resolveQuality(quality) === 'low';
+  }, [quality, reduceMotion]);
+  // The installed app opens straight into the game menu.
+  if (usePwa.getState().standalone || isStandalone()) return <Navigate to="/play" replace />;
   return (
     <div className="landing">
       <header className="landing-nav">
@@ -74,10 +86,14 @@ export function LandingPage() {
         </div>
         <div className="hero-board" ref={boardRef} aria-label="Interactive 3D board preview — drag to look around">
           <div className="hero-glow" aria-hidden="true" />
-          {showBoard && (
-            <Suspense fallback={null}>
-              <LandingBoard />
-            </Suspense>
+          {lightweight ? (
+            <img className="hero-poster" src="/og-image.png" alt="" width={1200} height={630} decoding="async" />
+          ) : (
+            showBoard && (
+              <Suspense fallback={null}>
+                <LandingBoard />
+              </Suspense>
+            )
           )}
         </div>
       </section>
