@@ -15,7 +15,7 @@ import { toast } from '../store/uiStore';
 import { AVATAR_IDS, Avatar } from '../components/Avatar';
 import { InstallButton } from '../components/Mobile';
 import { Shell } from '../components/Shell';
-import { Field, Segmented, Spinner, Switch } from '../components/ui';
+import { Field, PasswordInput, Segmented, Spinner, Switch } from '../components/ui';
 
 // ---------------------------------------------------------------------------
 // Auth
@@ -97,9 +97,7 @@ export function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           </>
         )}
         <Field label="Password" error={errors.password}>
-          <input
-            className="input"
-            type="password"
+          <PasswordInput
             enterKeyHint="go"
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
             value={form.password}

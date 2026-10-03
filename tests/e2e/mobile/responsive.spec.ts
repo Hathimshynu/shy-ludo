@@ -23,7 +23,15 @@ for (const vp of [...PORTRAIT, LANDSCAPE]) {
       await expectTouchTarget(page.getByRole('button', { name: 'Sign in', exact: true }), 'Sign in');
       await expectNoHorizontalScroll(page);
       expect(await login.getAttribute('autocapitalize')).toBe('none');
-      expect(await page.getByLabel('Password').getAttribute('type')).toBe('password');
+      const password = page.getByLabel('Password', { exact: true });
+      expect(await password.getAttribute('type')).toBe('password');
+      // Eye toggle: a comfortable touch target that reveals and hides the password.
+      const eye = page.getByRole('button', { name: 'Show password' });
+      await expectTouchTarget(eye, 'show password');
+      await eye.tap();
+      expect(await password.getAttribute('type')).toBe('text');
+      await page.getByRole('button', { name: 'Hide password' }).tap();
+      expect(await password.getAttribute('type')).toBe('password');
 
       // Menu (signed in, so the top bar shows the user chip): primary actions, bottom nav, targets.
       await page.getByRole('button', { name: 'Continue as guest' }).tap();
