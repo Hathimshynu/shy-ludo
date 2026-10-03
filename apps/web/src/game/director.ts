@@ -12,6 +12,7 @@ import {
 import { useSettings } from '../store/settingsStore';
 import { toast } from '../store/uiStore';
 import { boardRotationFor, computePlacements, PLAYER_HEX, type Placement, progressPoint, tokenKey } from './layout';
+import { HOME_ENTRY_MS, HOME_ENTRY_REDUCED_MS } from './motion';
 import type { GameTransport } from './transport';
 
 export const ORDINAL = ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th'];
@@ -50,6 +51,7 @@ export class GameDirector {
   private pendingTimer: number | null = null;
   private emoteId = 1;
   private bannerId = 1;
+  private timers = new Set<number>();
 
   constructor(
     readonly transport: GameTransport,
@@ -76,6 +78,8 @@ export class GameDirector {
     this.unsubscribe?.();
     this.queue = [];
     if (this.pendingTimer !== null) window.clearTimeout(this.pendingTimer);
+    this.timers.forEach((id) => window.clearTimeout(id));
+    this.timers.clear();
     useGame.getState().reset();
     presentation.setState(initialPresentation());
   }
@@ -184,6 +188,15 @@ export class GameDirector {
     return new Promise((r) => window.setTimeout(r, ms));
   }
 
+  /** A visual/audio cue scheduled during playback; cancelled if the game view closes. */
+  private later(fn: () => void, ms: number): void {
+    const id = window.setTimeout(() => {
+      this.timers.delete(id);
+      if (!this.disposed) fn();
+    }, ms);
+    this.timers.add(id);
+  }
+
   private player(state: GameState, id: string | null): PlayerState | undefined {
     return id ? state.players.find((p) => p.id === id) : undefined;
   }
@@ -199,14 +212,13 @@ export class GameDirector {
     switch (e.type) {
       case 'DICE_ROLLED': {
         const prev = presentation.getState().dice;
+        // Only the die animates; the board and lights stay still.
         presentation.setState({
           dice: { value: e.payload.value, rollId: prev.rollId + 1, spinning: false, color, by: e.playerId },
-          flash: { color, at: performance.now() },
         });
         if (sound && !prev.spinning) audio.play('diceRoll');
         await this.wait(t.dice, skip);
         if (sound) audio.play('diceLand');
-        if (e.payload.value === 6 && sound) addEffect({ kind: 'sparkle', x: 0, y: 1.2, z: 0, color, dur: 700 });
         if (isMe && e.payload.movableTokens.length === 0 && !(e.payload.value === 6 && e.payload.consecutiveSixes >= 3)) {
           toast('No legal moves this time.', 'info', 1800);
         }
@@ -225,15 +237,11 @@ export class GameDirector {
         const stepMs = p.kind === 'release' ? t.release : t.step;
         const total = stepMs * p.path.length;
         if (!skip) {
-          this.patchToken(key, { anim: { kind: 'path', points, start: performance.now(), stepMs, hop: p.kind === 'release' ? 0.9 : 0.42 } });
-          presentation.setState({ focus: { x: points[points.length - 1]!.x, z: points[points.length - 1]!.z, at: performance.now() } });
-          p.path.forEach((_, i) =>
-            window.setTimeout(() => {
-              audio.play('step', { pitch: 1 + i * 0.06 });
-              const pt = points[i + 1]!;
-              addEffect({ kind: 'ring', x: pt.x, y: pt.y, z: pt.z, color, dur: 450 });
-            }, stepMs * (i + 1) - 10),
-          );
+          this.patchToken(key, {
+            homeAt: undefined,
+            anim: { kind: 'path', points, start: performance.now(), stepMs, hop: p.kind === 'release' ? 0.9 : 0.42 },
+          });
+          p.path.forEach((_, i) => this.later(() => audio.play('step', { pitch: 1 + i * 0.06 }), stepMs * (i + 1) - 10));
         }
         await this.wait(total + 40, skip);
         useGame.setState({ visual: after });
@@ -241,9 +249,20 @@ export class GameDirector {
         const board = createBoard(visual.armCount as ArmCount);
         const square = progressToSquare(board, actor!.arm, p.to);
         const last = points[points.length - 1]!;
+        // The engine's event says the token reached home; the animation only follows it.
         if (p.to >= finishProgress(board)) {
-          if (sound) audio.play('home');
-          addEffect({ kind: 'home', x: last.x, y: last.y, z: last.z, color, dur: 1200 });
+          if (!skip) {
+            const reduce = useSettings.getState().reduceMotion;
+            const dur = reduce ? HOME_ENTRY_REDUCED_MS : HOME_ENTRY_MS;
+            const start = performance.now();
+            this.patchToken(key, { homeAt: start });
+            addEffect({ kind: 'home', x: last.x, y: last.y, z: last.z, color, dur, start });
+            presentation.setState({ homeFlash: { color, at: start + dur * 0.35 } });
+            if (sound) this.later(() => audio.play('home'), dur * 0.1);
+            if (isMe) haptic('home');
+            // Let the celebration land before the next banner/turn change.
+            await this.wait(dur * 0.75, skip);
+          }
         } else if (square !== null && isSafeSquare(board, square) && p.kind !== 'release') {
           if (sound) audio.play('safe');
         }
@@ -259,8 +278,10 @@ export class GameDirector {
         const to = placements.get(key)!;
         const attacker = this.player(visual, e.payload.by.playerId);
         const attackColor = attacker ? PLAYER_HEX[attacker.color] : color;
-        addEffect({ kind: 'burst', x: from.x, y: from.y + 0.3, z: from.z, color: attackColor, dur: 900 });
-        presentation.setState({ shake: performance.now(), flash: { color: attackColor, at: performance.now() } });
+        if (!skip) {
+          addEffect({ kind: 'burst', x: from.x, y: from.y + 0.3, z: from.z, color: attackColor, dur: 650 });
+          presentation.setState({ shake: performance.now() });
+        }
         if (sound) audio.play('capture');
         if (e.payload.by.playerId === this.myId || v.playerId === this.myId) haptic('capture');
         if (!skip) {
@@ -301,7 +322,8 @@ export class GameDirector {
           `${ORDINAL[e.payload.rank - 1] ?? `#${e.payload.rank}`} place`,
           color,
         );
-        if (sound) audio.play('home');
+        // The last token's home-entry chime has just played; use a distinct cue here.
+        if (sound) audio.play('notify');
         await this.wait(t.finish, skip);
         break;
       case 'PLAYER_FORFEITED':

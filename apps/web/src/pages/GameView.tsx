@@ -43,7 +43,10 @@ function useCountdown(deadline: number | null, now: () => number): number | null
  * in the remaining rectangle (see CameraRig). Runs on resize, orientation change and
  * whenever the HUD itself changes size — no per-frame React work.
  */
-function useHudInsets(layout: GameLayout, refs: { top: HTMLElement | null; dock: HTMLElement | null }) {
+/** Room kept above the desktop dice tray for up to two rows of move chips (px). */
+const DESKTOP_CHIP_RESERVE = 120;
+
+function useHudInsets(layout: GameLayout, refs: { top: HTMLElement | null; dock: HTMLElement | null; rail: HTMLElement | null }) {
   useLayoutEffect(() => {
     let frame = 0;
     const measure = () => {
@@ -54,10 +57,23 @@ function useHudInsets(layout: GameLayout, refs: { top: HTMLElement | null; dock:
       const top = refs.top?.getBoundingClientRect();
       const dock = refs.dock?.getBoundingClientRect();
       let insets = { top: top ? top.bottom : 0, right: 0, bottom: 0, left: 0 };
+      const obstacles: Array<{ left: number; top: number; right: number; bottom: number }> = [];
       if (current === 'portrait' && dock) insets = { ...insets, bottom: Math.max(0, h - dock.top) };
       else if (current === 'landscape' && dock) insets = { ...insets, right: Math.max(0, w - dock.left) };
-      else insets = { ...insets, bottom: 20 };
-      presentation.setState({ insets });
+      else {
+        // Desktop: the board uses the full height and slides/shrinks just enough to clear
+        // the player rail (top-left) and the dock's fixed footprint (bottom-right).
+        insets = { ...insets, bottom: 16 };
+        const rail = refs.rail?.getBoundingClientRect();
+        if (rail && rail.height > 0) obstacles.push({ left: rail.left, top: rail.top, right: rail.right, bottom: rail.bottom });
+        const tray = refs.dock?.querySelector('.dice-tray')?.getBoundingClientRect();
+        if (dock && tray) {
+          obstacles.push({ left: dock.left, right: dock.right, bottom: dock.bottom, top: dock.bottom - tray.height - DESKTOP_CHIP_RESERVE });
+        }
+      }
+      const prev = presentation.getState();
+      const same = (a: object, b: object) => JSON.stringify(a) === JSON.stringify(b);
+      if (!same(prev.insets, insets) || !same(prev.obstacles, obstacles)) presentation.setState({ insets, obstacles });
     };
     // Measure now and again on the next frame, once styles for a new layout/viewport have applied.
     const schedule = () => {
@@ -70,6 +86,7 @@ function useHudInsets(layout: GameLayout, refs: { top: HTMLElement | null; dock:
     const ro = new ResizeObserver(schedule);
     if (refs.top) ro.observe(refs.top, { box: 'border-box' });
     if (refs.dock) ro.observe(refs.dock, { box: 'border-box' });
+    if (refs.rail) ro.observe(refs.rail, { box: 'border-box' });
     window.addEventListener('resize', schedule);
     window.addEventListener('orientationchange', schedule);
     // Some mobile browsers report the final size only after the rotation animation.
@@ -82,7 +99,7 @@ function useHudInsets(layout: GameLayout, refs: { top: HTMLElement | null; dock:
       window.removeEventListener('orientationchange', schedule);
       window.removeEventListener('orientationchange', late);
     };
-  }, [layout, refs.top, refs.dock]);
+  }, [layout, refs.top, refs.dock, refs.rail]);
 }
 
 export interface GameViewProps {
@@ -101,12 +118,13 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
   const [playersOpen, setPlayersOpen] = useState(false);
   const [topEl, setTopEl] = useState<HTMLElement | null>(null);
   const [dockEl, setDockEl] = useState<HTMLElement | null>(null);
+  const [railEl, setRailEl] = useState<HTMLElement | null>(null);
   const qualitySetting = useSettings((s) => s.quality);
   const quality = useMemo(() => resolveQuality(qualitySetting), [qualitySetting]);
   const webgl = useMemo(() => deviceProfile().webgl, []);
   const layout = useGameLayout();
   const portrait = layout === 'portrait';
-  useHudInsets(layout, { top: topEl, dock: dockEl });
+  useHudInsets(layout, { top: topEl, dock: dockEl, rail: railEl });
 
   useEffect(() => {
     const director = new GameDirector(transport, myId);
@@ -198,18 +216,18 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest('input, textarea, select, [role="dialog"]')) return;
-      if ((e.key === ' ' || e.key === 'Enter') && canRoll) {
+      if ((e.key === ' ' || e.key === 'Enter') && canRoll && !e.repeat) {
         e.preventDefault();
         roll();
-      } else if (/^[1-4]$/.test(e.key) && mustMove) {
-        void directorRef.current?.move(Number(e.key) - 1);
+      } else if (/^[1-4]$/.test(e.key) && mustMove && !e.repeat) {
+        move(Number(e.key) - 1);
       } else if (e.key === 'Escape') {
         setLeaving((v) => !v);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [canRoll, mustMove, roll]);
+  }, [canRoll, mustMove, roll, move]);
 
   if (gone) {
     return (
@@ -287,7 +305,7 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
             aria-label={`${statusText}${timerText ? `, ${timerText} left` : ''}. Show players`}
           >
             {current && <Avatar id={current.avatar} size={30} ring={currentColor} />}
-            <span className="turn-pill-text">
+            <span className="turn-pill-text" key={`${visual.turn.playerId}`}>
               <span className="turn-pill-name">{myTurn ? 'You' : current?.name}</span>
               <span className="hud-turn" aria-live="polite">
                 {statusText}
@@ -307,7 +325,7 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
       </header>
 
       {layout === 'desktop' && (
-        <aside className="hud-players" aria-label="Players">
+        <aside className="hud-players" aria-label="Players" ref={setRailEl}>
           {visual.players.map((p) => (
             <PlayerCard key={p.id} {...cardProps(p)} />
           ))}

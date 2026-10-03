@@ -9,6 +9,7 @@ const PATTERNS = {
   roll: 12,
   select: [6, 30, 10],
   capture: [20, 40, 30],
+  home: [10, 40, 18],
   yourTurn: [10, 60, 10],
   win: [30, 50, 30, 50, 80],
 } as const;

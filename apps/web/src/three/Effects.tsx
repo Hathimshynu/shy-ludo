@@ -1,13 +1,20 @@
 import { useFrame } from '@react-three/fiber';
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
+import { HOME_ENTRY_MS, homeEntryPose } from '../game/motion';
 import { type Effect, presentation, usePresentation } from '../store/presentationStore';
 import type { QualityTier } from '../services/device';
 import { useSettings } from '../store/settingsStore';
 
-const ringGeometry = new THREE.RingGeometry(0.3, 0.42, 48);
+/**
+ * Event-driven effects only. Each effect is mounted while it plays and unmounted (with
+ * its GPU resources disposed) when it ends — nothing here runs while the board is idle.
+ */
 
-/** Soft round additive sprites with per-particle colour and size. */
+const ringGeometry = new THREE.RingGeometry(0.3, 0.4, 48);
+const discGeometry = new THREE.CircleGeometry(0.6, 40);
+
+/** Soft round sprites with per-particle colour and size. */
 function makeSpriteMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     transparent: true,
@@ -25,28 +32,8 @@ function makeSpriteMaterial(): THREE.ShaderMaterial {
   });
 }
 
-function Ring({ e }: { e: Effect }) {
-  const mesh = useRef<THREE.Mesh>(null);
-  const mat = useRef<THREE.MeshBasicMaterial>(null);
-  useFrame(() => {
-    const u = (performance.now() - e.start) / e.dur;
-    if (!mesh.current || !mat.current) return;
-    mesh.current.visible = u >= 0 && u < 1;
-    mesh.current.scale.setScalar(0.6 + u * 1.2);
-    mat.current.opacity = (1 - u) * 0.8;
-  });
-  return (
-    <mesh ref={mesh} geometry={ringGeometry} position={[e.x, e.y + 0.02, e.z]} rotation-x={-Math.PI / 2}>
-      <meshBasicMaterial ref={mat} color={e.color} transparent toneMapped={false} depthWrite={false} />
-    </mesh>
-  );
-}
-
-/** Radial particle explosion + shockwave ring + flash (captures, homecomings, sparkles). */
-function Burst({ e, count, speed, gravity, rise }: { e: Effect; count: number; speed: number; gravity: number; rise: number }) {
-  const points = useRef<THREE.Points>(null);
-  const flash = useRef<THREE.Mesh>(null);
-  const wave = useRef<THREE.Mesh>(null);
+/** A small, fixed pool of particles flying out from a point (no per-frame allocation). */
+function useParticles(count: number, color: string, speed: number, rise: number) {
   const material = useMemo(() => makeSpriteMaterial(), []);
   const { geometry, velocities } = useMemo(() => {
     const g = new THREE.BufferGeometry();
@@ -54,62 +41,117 @@ function Burst({ e, count, speed, gravity, rise }: { e: Effect; count: number; s
     const vel = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
     const size = new Float32Array(count);
-    const base = new THREE.Color(e.color);
+    const base = new THREE.Color(color);
     const white = new THREE.Color('#ffffff');
+    const c = new THREE.Color();
     for (let i = 0; i < count; i += 1) {
-      const a = Math.random() * Math.PI * 2;
-      const up = Math.random() * rise + 0.3;
-      const s = speed * (0.4 + Math.random() * 0.8);
+      // Evenly spread around the circle, with a little jitter, so few particles still read as a ring.
+      const a = ((i + Math.random() * 0.6) / count) * Math.PI * 2;
+      const s = speed * (0.6 + Math.random() * 0.5);
       vel[i * 3] = Math.cos(a) * s;
-      vel[i * 3 + 1] = up * speed;
+      vel[i * 3 + 1] = (0.4 + Math.random() * rise) * speed;
       vel[i * 3 + 2] = Math.sin(a) * s;
-      const c = base.clone().lerp(white, Math.random() * 0.5);
+      c.copy(base).lerp(white, Math.random() * 0.45);
       col.set([c.r, c.g, c.b], i * 3);
-      size[i] = 0.08 + Math.random() * 0.14;
+      size[i] = 0.07 + Math.random() * 0.08;
     }
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     g.setAttribute('aColor', new THREE.BufferAttribute(col, 3));
     g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
     return { geometry: g, velocities: vel };
-  }, [count, e.color, speed, rise]);
-
-  useFrame(() => {
-    const t = (performance.now() - e.start) / 1000;
-    const u = t / (e.dur / 1000);
+  }, [count, color, speed, rise]);
+  useEffect(
+    () => () => {
+      geometry.dispose();
+      material.dispose();
+    },
+    [geometry, material],
+  );
+  const update = (t: number, gravity: number, opacity: number) => {
     const pos = geometry.getAttribute('position') as THREE.BufferAttribute;
     for (let i = 0; i < count; i += 1) {
-      pos.setXYZ(
-        i,
-        velocities[i * 3]! * t,
-        velocities[i * 3 + 1]! * t - 0.5 * gravity * t * t,
-        velocities[i * 3 + 2]! * t,
-      );
+      pos.setXYZ(i, velocities[i * 3]! * t, velocities[i * 3 + 1]! * t - 0.5 * gravity * t * t, velocities[i * 3 + 2]! * t);
     }
     pos.needsUpdate = true;
-    material.uniforms.uOpacity!.value = Math.max(0, 1 - u);
-    if (points.current) points.current.visible = u < 1;
-    if (flash.current) {
-      flash.current.visible = u < 0.25;
-      flash.current.scale.setScalar(0.3 + u * 3);
-      (flash.current.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.9 - u * 4);
-    }
-    if (wave.current) {
-      wave.current.visible = u < 0.6;
-      wave.current.scale.setScalar(0.5 + u * 5);
-      (wave.current.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 0.7 - u * 1.2);
+    material.uniforms.uOpacity!.value = opacity;
+  };
+  return { geometry, material, update };
+}
+
+/** Capture: a small impact burst and a short shock ring (~0.6 s). */
+function CaptureBurst({ e, count }: { e: Effect; count: number }) {
+  const points = useRef<THREE.Points>(null);
+  const wave = useRef<THREE.Mesh>(null);
+  const waveMat = useRef<THREE.MeshBasicMaterial>(null);
+  const { geometry, material, update } = useParticles(count, e.color, 1.8, 0.8);
+
+  useFrame(() => {
+    const age = performance.now() - e.start;
+    const u = age / e.dur;
+    const visible = u >= 0 && u < 1;
+    if (points.current) points.current.visible = visible;
+    if (!visible) return;
+    update(age / 1000, 5, 1 - u);
+    if (wave.current && waveMat.current) {
+      wave.current.visible = u < 0.7;
+      wave.current.scale.setScalar(0.6 + u * 2.2);
+      waveMat.current.opacity = Math.max(0, 0.6 - u * 0.9);
     }
   });
 
   return (
     <group position={[e.x, e.y, e.z]}>
-      <points ref={points} geometry={geometry} material={material} frustumCulled={false} />
-      <mesh ref={flash}>
-        <sphereGeometry args={[0.3, 16, 12]} />
-        <meshBasicMaterial color={e.color} transparent toneMapped={false} depthWrite={false} blending={THREE.AdditiveBlending} />
+      <points ref={points} geometry={geometry} material={material} frustumCulled={false} visible={false} />
+      <mesh ref={wave} geometry={ringGeometry} rotation-x={-Math.PI / 2} position-y={-e.y + 0.2} visible={false}>
+        <meshBasicMaterial ref={waveMat} color={e.color} transparent depthWrite={false} />
       </mesh>
-      <mesh ref={wave} geometry={ringGeometry} rotation-x={-Math.PI / 2} position-y={-e.y + 0.18}>
-        <meshBasicMaterial color={e.color} transparent toneMapped={false} depthWrite={false} />
+    </group>
+  );
+}
+
+/**
+ * Home entry: a soft aura under the token, one ring expanding outward and a few
+ * particles drifting up — all in the player's colour, localised, ~1.2 s. Timing
+ * follows the same curve as the token's rise (game/motion.ts).
+ */
+function HomeEntry({ e, count, reduce }: { e: Effect; count: number; reduce: boolean }) {
+  const points = useRef<THREE.Points>(null);
+  const aura = useRef<THREE.Mesh>(null);
+  const auraMat = useRef<THREE.MeshBasicMaterial>(null);
+  const ring = useRef<THREE.Mesh>(null);
+  const ringMat = useRef<THREE.MeshBasicMaterial>(null);
+  const { geometry, material, update } = useParticles(count, e.color, 0.9, 1.6);
+  const RING_MS = 600;
+  const RING_DELAY = 0.1 * HOME_ENTRY_MS;
+
+  useFrame(() => {
+    const age = performance.now() - e.start;
+    const pose = homeEntryPose(age, reduce);
+    if (aura.current && auraMat.current) {
+      aura.current.visible = !pose.done;
+      aura.current.scale.setScalar(0.7 + pose.glow * 0.5);
+      auraMat.current.opacity = pose.glow * 0.45;
+    }
+    const ru = (age - RING_DELAY) / RING_MS;
+    if (ring.current && ringMat.current) {
+      ring.current.visible = !reduce && ru >= 0 && ru < 1;
+      ring.current.scale.setScalar(0.8 + ru * 2.4);
+      ringMat.current.opacity = Math.max(0, (1 - ru) * 0.75);
+    }
+    const pu = (age - RING_DELAY) / (HOME_ENTRY_MS - RING_DELAY);
+    if (points.current) points.current.visible = count > 0 && pu >= 0 && pu < 1;
+    if (count > 0 && pu >= 0 && pu < 1) update((age - RING_DELAY) / 1000, 0.6, 1 - pu * pu);
+  });
+
+  return (
+    <group position={[e.x, e.y, e.z]}>
+      <mesh ref={aura} geometry={discGeometry} rotation-x={-Math.PI / 2} position-y={0.03} visible={false}>
+        <meshBasicMaterial ref={auraMat} color={e.color} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
       </mesh>
+      <mesh ref={ring} geometry={ringGeometry} rotation-x={-Math.PI / 2} position-y={0.04} visible={false}>
+        <meshBasicMaterial ref={ringMat} color={e.color} transparent depthWrite={false} blending={THREE.AdditiveBlending} />
+      </mesh>
+      <points ref={points} geometry={geometry} material={material} frustumCulled={false} visible={false} position-y={0.3} />
     </group>
   );
 }
@@ -117,21 +159,19 @@ function Burst({ e, count, speed, gravity, rise }: { e: Effect; count: number; s
 export function Effects({ quality = 'high' }: { quality?: QualityTier }) {
   const effects = usePresentation((s) => s.effects);
   const reduce = useSettings((s) => s.reduceMotion);
-  // LOW keeps capture feedback but with far fewer particles.
-  const scale = reduce ? 0.3 : quality === 'low' ? 0.4 : quality === 'ultra' ? 1.6 : 1;
+  // Small, fixed particle budgets: feedback, not fireworks.
+  const capture = reduce ? 0 : quality === 'low' ? 8 : 16;
+  const home = reduce ? 0 : quality === 'low' ? 8 : 14;
   return (
     <group>
       {effects.map((e) => {
-        if (performance.now() - e.start > e.dur) return null;
         switch (e.kind) {
-          case 'ring':
-            return reduce ? null : <Ring key={e.id} e={e} />;
           case 'burst':
-            return <Burst key={e.id} e={e} count={Math.round(70 * scale)} speed={2.6} gravity={6} rise={1.2} />;
+            return <CaptureBurst key={e.id} e={e} count={capture} />;
           case 'home':
-            return <Burst key={e.id} e={e} count={Math.round(60 * scale)} speed={1.4} gravity={1.5} rise={2.2} />;
-          case 'sparkle':
-            return reduce ? null : <Burst key={e.id} e={e} count={24} speed={1.2} gravity={0.5} rise={1.5} />;
+            return <HomeEntry key={e.id} e={e} count={home} reduce={reduce} />;
+          default:
+            return null;
         }
       })}
     </group>
@@ -141,13 +181,24 @@ export function Effects({ quality = 'high' }: { quality?: QualityTier }) {
 // ---- Winner celebration ---------------------------------------------------------------
 
 const CONFETTI_COLORS = ['#ff4d5e', '#2ee59d', '#ffd23f', '#3d8bff', '#a66bff', '#ff8a3d', '#2fe0e8', '#ff5fc8', '#ffffff'];
+/** Hard limit: confetti and fireworks stop (and unmount) after this long. */
+export const CELEBRATION_MS = 7500;
 
 export function Celebration({ quality }: { quality: QualityTier }) {
   const winnerId = usePresentation((s) => s.winnerId);
+  const celebrateAt = usePresentation((s) => s.celebrateAt);
   const reduce = useSettings((s) => s.reduceMotion);
-  if (!winnerId) return null;
-  const count = reduce ? 40 : { ultra: 400, high: 260, medium: 160, low: 70 }[quality];
-  const shells = { ultra: 8, high: 6, medium: 3, low: 0 }[quality];
+  const [, rerender] = useState(0);
+  const remaining = celebrateAt + CELEBRATION_MS - performance.now();
+  useEffect(() => {
+    if (!winnerId || remaining <= 0) return;
+    const id = window.setTimeout(() => rerender((n) => n + 1), remaining + 20);
+    return () => window.clearTimeout(id);
+  }, [winnerId, remaining]);
+  // A finished game restored from a snapshot has no celebration (celebrateAt is in the past).
+  if (!winnerId || remaining <= 0) return null;
+  const count = reduce ? 40 : { ultra: 300, high: 220, medium: 140, low: 60 }[quality];
+  const shells = { ultra: 6, high: 5, medium: 3, low: 0 }[quality];
   return (
     <group>
       <Confetti count={count} />
@@ -176,19 +227,28 @@ function Confetti({ count }: { count: number }) {
   const material = useMemo(() => new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, toneMapped: false }), []);
   const dummy = useMemo(() => new THREE.Object3D(), []);
   const colored = useRef(false);
+  useEffect(
+    () => () => {
+      geometry.dispose();
+      material.dispose();
+    },
+    [geometry, material],
+  );
 
   useFrame((_, dt) => {
     const m = mesh.current;
     if (!m) return;
     if (!colored.current) {
-      data.forEach((_, i) => m.setColorAt(i, new THREE.Color(CONFETTI_COLORS[i % CONFETTI_COLORS.length])));
+      const c = new THREE.Color();
+      data.forEach((_, i) => m.setColorAt(i, c.set(CONFETTI_COLORS[i % CONFETTI_COLORS.length]!)));
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
       colored.current = true;
     }
     const elapsed = (performance.now() - presentation.getState().celebrateAt) / 1000;
     data.forEach((d, i) => {
       d.y -= d.vy * dt;
-      if (d.y < 0.2) d.y = elapsed < 7 ? 8 + Math.random() * 4 : -10;
+      // Recycle pieces only during the first part; afterwards they fall away.
+      if (d.y < 0.2) d.y = elapsed < 5 ? 8 + Math.random() * 4 : -10;
       d.sway += dt * 2;
       d.rx += d.spin * dt;
       d.ry += d.spin * 0.6 * dt;
@@ -204,7 +264,7 @@ function Confetti({ count }: { count: number }) {
 }
 
 function Fireworks({ shells }: { shells: number }) {
-  const PER = 90;
+  const PER = 70;
   const total = shells * PER;
   const material = useMemo(() => makeSpriteMaterial(), []);
   const state = useMemo(() => {
@@ -220,6 +280,13 @@ function Fireworks({ shells }: { shells: number }) {
     g.setAttribute('aSize', new THREE.BufferAttribute(size, 1));
     return { g, vel, origin, born };
   }, [total, shells]);
+  useEffect(
+    () => () => {
+      state.g.dispose();
+      material.dispose();
+    },
+    [state, material],
+  );
 
   const launch = (s: number, now: number) => {
     const { g, vel, origin, born } = state;
@@ -228,13 +295,14 @@ function Fireworks({ shells }: { shells: number }) {
     origin.set([(Math.random() - 0.5) * 14, 5 + Math.random() * 4, (Math.random() - 0.5) * 10 - 2], s * 3);
     born[s] = now;
     const c = new THREE.Color(CONFETTI_COLORS[Math.floor(Math.random() * 8)]);
+    const cc = new THREE.Color();
     for (let i = 0; i < PER; i += 1) {
       const k = s * PER + i;
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
       const sp = 2.5 + Math.random() * 1.5;
       vel.set([Math.sin(phi) * Math.cos(theta) * sp, Math.cos(phi) * sp, Math.sin(phi) * Math.sin(theta) * sp], k * 3);
-      const cc = c.clone().lerp(new THREE.Color('#ffffff'), Math.random() * 0.4);
+      cc.copy(c).lerp(WHITE, Math.random() * 0.4);
       col.setXYZ(k, cc.r, cc.g, cc.b);
       size.setX(k, 0.14 + Math.random() * 0.1);
     }
@@ -249,7 +317,7 @@ function Fireworks({ shells }: { shells: number }) {
     const pos = g.getAttribute('position') as THREE.BufferAttribute;
     for (let s = 0; s < shells; s += 1) {
       const age = now - born[s]!;
-      if ((born[s] === 0 || age > 1.6) && now - celebrateAt < 6) launch(s, now - Math.random() * 0.4);
+      if ((born[s] === 0 || age > 1.6) && now - celebrateAt < 5) launch(s, now - Math.random() * 0.4);
       const a = now - born[s]!;
       for (let i = 0; i < PER; i += 1) {
         const k = s * PER + i;
@@ -262,8 +330,10 @@ function Fireworks({ shells }: { shells: number }) {
       }
     }
     pos.needsUpdate = true;
-    material.uniforms.uOpacity!.value = Math.max(0, 1 - Math.max(0, now - celebrateAt - 6) / 1.5);
+    material.uniforms.uOpacity!.value = Math.max(0, 1 - Math.max(0, now - celebrateAt - 5) / 1.5);
   });
 
   return <points geometry={state.g} material={material} frustumCulled={false} />;
 }
+
+const WHITE = new THREE.Color('#ffffff');

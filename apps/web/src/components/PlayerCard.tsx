@@ -49,7 +49,18 @@ export const PlayerCard = memo(function PlayerCard({ player, armCount, isTurn, i
           {emote && <span className="pc-emote">{EMOTE_GLYPH[emote] ?? '✨'}</span>}
         </span>
         <span className="pc-chip-meta">
-          {player.rank !== null && player.status === 'finished' ? ORDINAL[player.rank - 1] : out ? 'Left' : !connected ? 'Off' : `★${home}`}
+          {player.rank !== null && player.status === 'finished' ? (
+            ORDINAL[player.rank - 1]
+          ) : out ? (
+            'Left'
+          ) : !connected ? (
+            'Off'
+          ) : (
+            // Keyed on the count so a token reaching home replays a short pop.
+            <span key={home} className={home > 0 ? 'pc-home' : undefined} title={`${home} of ${player.tokens.length} tokens home`}>
+              ★{home}
+            </span>
+          )}
         </span>
       </span>
     );
@@ -81,8 +92,10 @@ export const PlayerCard = memo(function PlayerCard({ player, armCount, isTurn, i
             <span className="pc-status">Offline</span>
           ) : (
             <>
-              <span title="Tokens home">★ {home}/{player.tokens.length}</span>
-              <span title="Tokens in base">⌂ {base}</span>
+              <span key={home} className={home > 0 ? 'pc-home' : undefined} title="Tokens home">
+                ★ Home {home}/{player.tokens.length}
+              </span>
+              <span title="Tokens in base">Base {base}</span>
             </>
           )}
         </div>

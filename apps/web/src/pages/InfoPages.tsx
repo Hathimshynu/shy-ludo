@@ -364,9 +364,9 @@ export function LeaderboardPage() {
 
 const TIER_LABEL = { low: 'Low', medium: 'Medium', high: 'High', ultra: 'Ultra' } as const;
 const TIER_HINT = {
-  low: 'Low: no bloom, shadows or particles, 30 fps cap — best for older phones and battery life.',
-  medium: 'Medium: soft shadows, light bloom, fewer particles.',
-  high: 'High: full lighting, bloom, reflections and particles.',
+  low: 'Low: no shadows, reflections or post-processing, fewer effect particles, 30 fps cap — best for older phones and battery life.',
+  medium: 'Medium: soft shadows and reflections, no post-processing.',
+  high: 'High: sharper shadows, reflections, anti-aliasing and a subtle bloom on effects.',
   ultra: 'Ultra: sharper shadows, higher resolution and extra effects for powerful GPUs.',
 } as const;
 

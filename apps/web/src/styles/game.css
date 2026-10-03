@@ -126,8 +126,8 @@
   font-variant-numeric: tabular-nums;
 }
 .turn-pill-timer.is-urgent {
+  /* Urgent = colour change, never a blink. */
   color: var(--bad);
-  animation: blink 0.5s infinite;
 }
 
 /* ---- Player cards ---------------------------------------------------------------- */
@@ -319,8 +319,33 @@
 .player-card.is-chip.is-turn .pc-chip-meta {
   color: var(--pc);
 }
+/* Home counter: one short pop when a token reaches home (keyed re-mount), then still. */
+.pc-home {
+  display: inline-block;
+  animation: home-pop 0.6s var(--ease-spring) both;
+}
+@keyframes home-pop {
+  from {
+    transform: scale(1.5);
+    color: var(--accent);
+  }
+}
+/* Turn change: a single entrance, never a repeating blink. */
+.player-card.is-turn,
+.turn-pill-text {
+  animation: turn-in 0.35s var(--ease-out) both;
+}
+@keyframes turn-in {
+  from {
+    opacity: 0.6;
+    transform: translateY(3px);
+  }
+}
 
 /* ---- Dock: dice / action area --------------------------------------------------- */
+.game-root {
+  --desktop-dock-w: 300px;
+}
 .hud-dock {
   position: absolute;
   z-index: 4;
@@ -345,12 +370,14 @@
 }
 .dice-tray.is-ready {
   border-color: color-mix(in srgb, var(--pc) 80%, transparent);
-  box-shadow: 0 0 0 1px color-mix(in srgb, var(--pc) 60%, transparent), 0 0 40px color-mix(in srgb, var(--pc) 40%, transparent), var(--shadow-2);
-  animation: tray-pulse 1.6s ease-in-out infinite;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--pc) 60%, transparent), 0 0 28px color-mix(in srgb, var(--pc) 32%, transparent), var(--shadow-2);
+  /* One short entrance when it becomes your roll — then it holds still. */
+  animation: tray-ready 0.45s var(--ease-out) both;
 }
-@keyframes tray-pulse {
-  50% {
-    box-shadow: 0 0 0 1px color-mix(in srgb, var(--pc) 60%, transparent), 0 0 60px color-mix(in srgb, var(--pc) 55%, transparent), var(--shadow-2);
+@keyframes tray-ready {
+  from {
+    transform: scale(0.97);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--pc) 60%, transparent), 0 0 0 color-mix(in srgb, var(--pc) 0%, transparent), var(--shadow-2);
   }
 }
 .dice-button {
@@ -409,7 +436,6 @@
 .dice-timer.is-urgent {
   color: var(--bad);
   font-weight: 700;
-  animation: blink 0.5s infinite;
 }
 
 /* On-screen move choices — unambiguous even when tokens overlap on the board. */
@@ -470,6 +496,22 @@
 .layout-portrait .dice-button {
   width: 96px;
   height: 96px;
+}
+/* Desktop: the dock has a fixed footprint (tray + up to two rows of chips) so the board,
+   which is framed around it, never re-fits when the label or the move chips change. */
+.layout-desktop .hud-dock {
+  width: var(--desktop-dock-w);
+}
+.layout-desktop .dice-tray {
+  width: 100%;
+}
+.layout-desktop .move-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+}
+.layout-desktop .move-chip {
+  min-width: 0;
 }
 .layout-portrait .move-picker {
   justify-content: stretch;
@@ -693,7 +735,13 @@
   height: 300px;
   background: radial-gradient(circle, color-mix(in srgb, var(--pc) 55%, transparent), transparent 65%);
   pointer-events: none;
-  animation: breathe 3s ease-in-out infinite;
+  animation: winner-glow 1.4s 1.3s var(--ease-out) both;
+}
+@keyframes winner-glow {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
 }
 .winner-emoji {
   position: relative;

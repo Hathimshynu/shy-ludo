@@ -1,6 +1,7 @@
 import { type ThreeEvent, useFrame } from '@react-three/fiber';
-import { memo, useMemo, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
+import { homeEntryPose, selectableBreath, WINNER_HOP_MS } from '../game/motion';
 import { presentation, usePresentation } from '../store/presentationStore';
 import { useSettings } from '../store/settingsStore';
 
@@ -57,23 +58,24 @@ function materialsFor(color: string, out: boolean, cheap: boolean) {
       body: cheap
         ? (new THREE.MeshStandardMaterial({
             color: base,
-            roughness: 0.25,
-            metalness: 0.1,
+            roughness: 0.32,
+            metalness: 0.05,
             emissive: base,
-            emissiveIntensity: out ? 0 : 0.2,
+            emissiveIntensity: out ? 0 : 0.1,
           }) as THREE.MeshPhysicalMaterial)
         : new THREE.MeshPhysicalMaterial({
+            // Glossy but not mirror-like: colour and silhouette carry the read, not glare.
             color: base,
-            roughness: 0.16,
-            metalness: 0.08,
-            clearcoat: 1,
-            clearcoatRoughness: 0.08,
-            sheen: 0.4,
+            roughness: 0.3,
+            metalness: 0.04,
+            clearcoat: 0.7,
+            clearcoatRoughness: 0.2,
+            sheen: 0.2,
             sheenColor: new THREE.Color('#ffffff'),
             emissive: base,
-            emissiveIntensity: out ? 0 : 0.14,
+            emissiveIntensity: out ? 0 : 0.05,
           }),
-      collar: new THREE.MeshBasicMaterial({ color: out ? '#8a85a8' : base.clone().lerp(new THREE.Color('#ffffff'), 0.45), toneMapped: false }),
+      collar: new THREE.MeshBasicMaterial({ color: out ? '#8a85a8' : base.clone().lerp(new THREE.Color('#ffffff'), 0.45) }),
     };
     materialCache.set(key, m);
   }
@@ -117,16 +119,16 @@ const Token = memo(function Token({ tokenKey, onSelect, cheap }: TokenProps) {
   const mats = useMemo(() => materialsFor(color, out, cheap), [color, out, cheap]);
   const shadowMat = useMemo(() => shadowMaterial.clone(), []);
 
-  useFrame(({ clock }, dt) => {
+  useFrame((_, dt) => {
     const s = presentation.getState();
     const t = s.tokens[tokenKey];
     if (!t || !group.current || !body.current) return;
     const reduce = useSettings.getState().reduceMotion;
     const now = performance.now();
-    const time = clock.elapsedTime;
     let { x, y, z } = t.rest;
     let scale = t.rest.scale;
     let spin = 0;
+    let tilt = 0;
     let moving = false;
 
     const anim = t.anim;
@@ -154,8 +156,8 @@ const Token = memo(function Token({ tokenKey, onSelect, cheap }: TokenProps) {
           y = a.y + (b.y - a.y) * e + Math.sin(Math.PI * u) * anim.hop;
           scale = a.scale + (b.scale - a.scale) * e;
           if (anim.kind === 'capture') {
-            spin = u * Math.PI * 6;
-            scale *= 1 - Math.sin(Math.PI * u) * 0.35;
+            spin = u * Math.PI * 2;
+            scale *= 1 - Math.sin(Math.PI * u) * 0.25;
           } else {
             spin = Math.sin(Math.PI * u) * 0.5;
             // squash on landing
@@ -167,18 +169,26 @@ const Token = memo(function Token({ tokenKey, onSelect, cheap }: TokenProps) {
     }
 
     if (!moving) {
-      body.current.scale.lerp(ONE, 0.25);
+      // Ease back, then snap exactly: an idle token must be pixel-still, not drifting by epsilons.
+      if (body.current.scale.distanceToSquared(ONE) < 1e-8) body.current.scale.copy(ONE);
+      else body.current.scale.lerp(ONE, 0.25);
       body.current.position.x = 0;
       TARGET.set(x, y, z);
       if (!initialised.current) current.current.copy(TARGET);
-      current.current.lerp(TARGET, 1 - Math.exp(-dt * 14));
+      if (current.current.distanceToSquared(TARGET) < 1e-8) current.current.copy(TARGET);
+      else current.current.lerp(TARGET, 1 - Math.exp(-dt * 14));
       x = current.current.x;
       y = current.current.y;
       z = current.current.z;
-      if (!reduce) {
-        if (selectable) y += Math.abs(Math.sin(time * 5.2 + t.index)) * 0.16;
-        else if (s.winnerId === t.playerId) y += Math.abs(Math.sin(time * 6 + t.index * 0.7)) * 0.45;
-        else if (!t.finished) y += Math.sin(time * 1.8 + t.index * 1.3 + x) * 0.012;
+      // Idle tokens are completely still. Only event-driven poses below move them.
+      if (t.homeAt !== undefined) {
+        const pose = homeEntryPose(now - t.homeAt, reduce);
+        y += pose.lift;
+        spin = pose.spin;
+        tilt = pose.tilt;
+        scale *= pose.scale;
+      } else if (!reduce && s.winnerId === t.playerId && now - s.celebrateAt < WINNER_HOP_MS) {
+        y += Math.abs(Math.sin((now - s.celebrateAt) / 160 + t.index * 0.7)) * 0.35;
       }
     } else {
       current.current.set(x, y, z);
@@ -190,18 +200,19 @@ const Token = memo(function Token({ tokenKey, onSelect, cheap }: TokenProps) {
     const selAge = s.selected?.key === tokenKey ? now - s.selected.at : Infinity;
     const selected = selAge < SELECT_MS;
     const pop = selected && !reduce ? Math.sin((selAge / SELECT_MS) * Math.PI) * 0.22 : 0;
+    // Legal tokens "breathe" slowly (±4%) — a calm cue, never a bounce or flash.
+    const breath = selectable && !selected && !reduce ? selectableBreath(now) : 0;
     group.current.position.set(x, y, z);
-    const k = scale * (hovered ? 1.14 : 1) * (1 + pop);
+    const k = scale * (hovered ? 1.12 : 1) * (1 + pop + breath * 0.04);
     group.current.scale.setScalar(k);
-    body.current.rotation.y = spin + (selectable && !reduce ? Math.sin(time * 2) * 0.25 : 0);
+    body.current.rotation.set(tilt, spin, 0);
 
     if (ring.current && ringMat.current) {
       ring.current.visible = selectable || selected;
       if (selectable || selected) {
-        const pulse = reduce ? 1 : selected ? 1.15 + pop : 1 + Math.sin(time * 6) * 0.12;
-        ring.current.scale.setScalar(pulse);
+        ring.current.scale.setScalar(selected ? 1.15 + pop : 1 + breath * 0.08);
         ringMat.current.color.copy(selected ? WHITE : TINT.set(color));
-        ringMat.current.opacity = selected ? 0.95 : 0.55 + Math.sin(time * 6) * 0.3;
+        ringMat.current.opacity = selected ? 0.95 : 0.6 + breath * 0.25;
         ring.current.position.y = -(y - t.rest.y) / k + 0.02;
       }
     }
@@ -213,6 +224,14 @@ const Token = memo(function Token({ tokenKey, onSelect, cheap }: TokenProps) {
       shadowMat.opacity = 0.35 * sh;
     }
   });
+
+  // Leaving the game (or a token disappearing) while hovered must not leave a pointer cursor behind.
+  useEffect(
+    () => () => {
+      document.body.style.cursor = '';
+    },
+    [],
+  );
 
   const handleOver = (e: ThreeEvent<PointerEvent>) => {
     if (!selectable) return;

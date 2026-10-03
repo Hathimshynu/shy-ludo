@@ -119,8 +119,9 @@ function Die() {
       if (u < 0.15) g.quaternion.slerp(a.from, 1 - u / 0.15);
       lift = reduce ? 0 : Math.abs(Math.sin(u * Math.PI * 2.2)) * (1 - u) * 1.1;
     } else {
-      g.quaternion.slerp(a.target, 0.2);
-      lift = reduce ? 0 : Math.sin(time * 2) * 0.03;
+      // At rest the die is perfectly still.
+      if (g.quaternion.angleTo(a.target) < 1e-4) g.quaternion.copy(a.target);
+      else g.quaternion.slerp(a.target, 0.2);
     }
     g.position.y = lift;
     const land = u < 1 ? Math.max(0, 1 - Math.abs(u - 0.98) * 12) : 0;
@@ -132,8 +133,8 @@ function Die() {
     }
     if (halo.current && haloMat.current) {
       haloMat.current.color.copy(a.color);
-      const pulse = u < 1 || d.spinning ? 1 : 0.22 + Math.sin(time * 3) * 0.05;
-      haloMat.current.opacity = 0.55 * pulse;
+      // Bright while rolling, a steady soft glow at rest (no idle pulsing).
+      haloMat.current.opacity = u < 1 || d.spinning ? 0.55 : 0.12;
       halo.current.scale.setScalar(1 + (u < 1 ? Math.sin(u * Math.PI) * 0.4 : 0));
     }
   });

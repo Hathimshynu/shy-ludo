@@ -192,11 +192,14 @@ Ludo Nova is mobile-first and installable. Details: [ARCHITECTURE.md §7](ARCHIT
   frames the board in whatever space the HUD leaves, at any size from 320 px.
 * **Breakpoints:** ≤ 480 (small phones), ≤ 640 (bottom sheets), ≤ 760 (bottom navigation),
   ≤ 899 (single-column lobby); game layout by aspect ratio/height (see `computeGameLayout`).
-* **Touch:** tap the die (double taps are ignored), tap a glowing token **or** a move chip
+* **Touch:** tap the die (double taps are ignored), tap a highlighted token **or** a move chip
   ("Capture!", "Release", "Move 4 · Front token"). Hover, keyboard and right click are never required.
 * **Graphics quality:** Auto / Low / Medium / High / Ultra (Settings). Auto uses a capability
-  probe (WebGL, memory, cores, data-saver); LOW drops bloom, shadows, reflections and particles
-  and caps at 30 fps.
+  probe (WebGL, memory, cores, data-saver); LOW drops shadows and reflections, uses fewer
+  effect particles and caps at 30 fps. Bloom is only used (subtly) on HIGH/ULTRA.
+* **Calm board:** the board, lights and camera are static. Only the die, the token you can
+  move, moving/captured tokens, the home-entry celebration and the winner celebration
+  animate — each for a fixed, short time.
 * **Install:** Android/desktop Chromium get an in-app "Install" prompt (from
   `beforeinstallprompt`, snoozed 14 days on "Later"); iPhone/iPad get "Share → Add to Home
   Screen" instructions. Settings → Install app shows the state ("Installed").

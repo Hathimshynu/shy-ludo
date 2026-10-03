@@ -137,8 +137,9 @@ deployment is **one** web service instance scaled vertically (see
 src/
   pages/        route components (Landing, Menu, Online, Room, Solo, Game, Profile, …)
   components/   UI kit (Button, Panel, PlayerCard, Toasts, ConnectionBadge, …)
-  three/        R3F scene: Board, Tokens, Dice, Effects, CameraRig, Particles
-  game/         GameDirector (event queue → animations), transports, layout maths
+  three/        R3F scene: Board, Tokens, Dice, Effects, CameraRig
+  game/         GameDirector (event queue → animations), transports, layout maths,
+                framing (exact board fit), motion (event animation curves)
   store/        zustand stores: auth, lobby, game, ui, settings/audio, presentation
   services/     api client, socket client, sound manager, music
   workers/      solo-game worker (engine + AI off the main thread)
@@ -187,16 +188,32 @@ viewport ──▶ computeGameLayout(w, h)          (hooks/useMedia.ts)
                         ▼
 GameView renders the HUD for that layout and measures it (ResizeObserver)
                         ▼
-presentation.insets {top,right,bottom,left}   (no React re-render of the canvas)
+presentation.insets {top,right,bottom,left} + obstacles (desktop rail, dock footprint)
                         ▼
-CameraRig: free rect = viewport − insets → fit board on both axes →
-           camera.setViewOffset() centres the projection in the free rect
+CameraRig (only when these change): project the board's real outline and solve the
+camera distance so it fits the free rect, clears the obstacles and is centred
+(game/framing.ts) → camera distance + camera.setViewOffset() shift
 ```
+
+### Animation model: "nothing moves until something important happens"
+
+| Class | Examples | Rule |
+| --- | --- | --- |
+| Persistent visual state | board, lighting, materials, camera | **static** — no time uniforms, no animated lights, no idle motion |
+| Interaction | legal-token breathing (±4 %, 1.6 s), selection pop, hover, dice tray entrance | only on the object that needs attention |
+| Gameplay event | dice roll, token hop, capture burst, home entry | started by an engine event in `GameDirector`, fixed duration, then unmounted |
+| Celebration | confetti, fireworks, winner hop | hard limit (7.5 s / 4.5 s), then unmounted |
+
+Animations never change game state: the engine's events (e.g. `TOKEN_MOVED` to the
+finish) trigger them, and `useGame.state` is already authoritative before they start.
+Curves live in `game/motion.ts` (pure, unit-tested); effects in `three/Effects.tsx`
+remove themselves from the store when they end. "Reduce animations" shortens or drops
+the decorative parts but keeps essential feedback (token moves, a small home lift).
 
 | Concern | Where |
 | --- | --- |
 | Layout selection | `hooks/useMedia.ts` (`computeGameLayout`): portrait (w/h < 0.9), landscape (h < 640 or w < 1024), desktop |
-| HUD → camera framing | `pages/GameView.tsx` (`useHudInsets`) → `three/GameScene.tsx` (`CameraRig`) |
+| HUD → camera framing | `pages/GameView.tsx` (`useHudInsets`) → `three/GameScene.tsx` (`CameraRig`) → `game/framing.ts` (`fitBoard`) |
 | Safe areas | `--sat/--sar/--sab/--sal` CSS variables on `:root` (from `env(safe-area-inset-*)`) |
 | Quality tiers | `services/device.ts` (capability probe) → `TIERS` table in `three/GameScene.tsx` |
 | Touch selection | 3D tokens (enlarged hit area on coarse pointers) **and** on-screen move chips (`game/moves.ts`) |

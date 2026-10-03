@@ -15,8 +15,10 @@ Architecture: [ARCHITECTURE.md §7](ARCHITECTURE.md#7-mobile--pwa-architecture).
 | ≥ 1024 × 640 landscape (desktop) | unchanged desktop layout: left player rail, floating dice tray (+ move chips) |
 
 * Board framing: HUD regions are measured (`ResizeObserver`) and published as
-  `presentation.insets`; `CameraRig` fits the board into the remaining rectangle on both
-  axes and shifts the projection centre with `camera.setViewOffset()`. No fixed pixel sizes.
+  `presentation.insets` (+ desktop `obstacles`); `CameraRig` projects the board's real
+  outline and solves the camera distance so it fills the free rectangle exactly, clears the
+  desktop player rail and dice tray, and is centred (`game/framing.ts`), applied with
+  `camera.setViewOffset()`. No fixed pixel sizes.
 * `100dvh` with `100vh` fallbacks; safe areas via `--sat/--sar/--sab/--sal` (from
   `env(safe-area-inset-*)`) on every edge-anchored element (HUD, dock, sheets, bottom nav,
   install card, update banner, winner screen).
@@ -27,7 +29,7 @@ Architecture: [ARCHITECTURE.md §7](ARCHITECTURE.md#7-mobile--pwa-architecture).
 
 ## 2. Mobile UX
 
-* **Token selection:** legal tokens glow/bounce with a pulsing ring; a tap shows a white ring
+* **Token selection:** legal tokens breathe gently (±4 % over 1.6 s) on a steady ring; a tap shows a white ring
   + scale pop (`presentation.selected`) before the move; touch hit areas are 25 % larger on
   coarse pointers. **Move chips** list each distinct legal move ("Capture!", "Release",
   "Bring home", "Move 4 · Front token"); equivalent moves (stacked tokens, several tokens in
@@ -72,10 +74,13 @@ entry after authenticated traffic).
 
 | Tier | DPR | Shadows | Reflections | Bloom | Particles | Fireworks | Other |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| LOW | 0.75–1 | off | off | off | 0 ambient, 40 % burst | off | standard (not physical) token material, 30 fps cap |
-| MEDIUM | 1–1.5 | 1024 | 64 px env | light | 120 | 3 shells | |
-| HIGH | 1–2 | 2048 | 128 px env | full + vignette, 4× MSAA | 240 | 6 shells | |
-| ULTRA | 1–2.5 | 4096 | 256 px env | stronger, 8× MSAA | 420 | 8 shells | 1.6× burst particles |
+| LOW | 0.75–1 | off | off | off | 8 per capture/home | off | standard (not physical) token material, 30 fps cap |
+| MEDIUM | 1–1.5 | 1024 | 64 px env | off | 14–16 per effect | 3 shells | |
+| HIGH | 1–2 | 2048 | 128 px env | subtle (effects only), 4× MSAA | 14–16 per effect | 5 shells | |
+| ULTRA | 1–2.5 | 4096 | 256 px env | subtle, 8× MSAA | 14–16 per effect | 6 shells | |
+
+There are no ambient particles and no continuously animated lights or materials on any
+tier: an idle board renders identical frames (verified by `tests/e2e/mobile/board-fit.spec.ts`).
 
 * **Auto** = capability probe (`services/device.ts`): WebGL/WebGL2, max texture size,
   software-renderer detection, `hardwareConcurrency`, `deviceMemory`, coarse pointer,

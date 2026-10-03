@@ -122,51 +122,41 @@ export function armRotation(board: BoardGeometry, arm: number): number {
 }
 
 /**
- * Tile material: standard PBR with (a) per-instance colour glow and (b) light pulses
- * that travel clockwise around the track — the board's signature animated path.
+ * Tile material: standard PBR plus a soft, static per-instance colour glow so the
+ * coloured lanes read clearly. There is no time uniform: tiles never animate.
  */
-export function createTileMaterial(): THREE.MeshStandardMaterial & { userData: { uniforms: { uTime: { value: number } } } } {
-  const uniforms = { uTime: { value: 0 } };
-  const material = new THREE.MeshStandardMaterial({ roughness: 0.32, metalness: 0.05 });
-  material.userData.uniforms = uniforms;
+export function createTileMaterial(): THREE.MeshStandardMaterial {
+  const material = new THREE.MeshStandardMaterial({ roughness: 0.36, metalness: 0.05 });
   material.onBeforeCompile = (shader) => {
-    shader.uniforms.uTime = uniforms.uTime;
     shader.vertexShader =
-      'attribute float aTrack;\nattribute float aGlow;\nvarying float vTrack;\nvarying float vGlow;\n' +
-      shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvTrack = aTrack;\nvGlow = aGlow;');
+      'attribute float aGlow;\nvarying float vGlow;\n' +
+      shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow;');
     shader.fragmentShader =
-      'uniform float uTime;\nvarying float vTrack;\nvarying float vGlow;\n' +
+      'varying float vGlow;\n' +
       shader.fragmentShader.replace(
         '#include <emissivemap_fragment>',
         `#include <emissivemap_fragment>
         #if defined( USE_INSTANCING_COLOR ) || defined( USE_COLOR )
-          totalEmissiveRadiance += vColor.rgb * vGlow * 0.42;
-        #endif
-        if (vTrack >= 0.0) {
-          float d = mod(uTime * 5.0 - vTrack, 13.0);
-          float pulse = exp(-d * 0.55);
-          totalEmissiveRadiance += vec3(0.62, 0.52, 1.0) * pulse * 0.32;
-        }`,
+          totalEmissiveRadiance += vColor.rgb * vGlow * 0.22;
+        #endif`,
       );
   };
-  material.customProgramCacheKey = () => 'ludo-tile-v1';
-  return material as THREE.MeshStandardMaterial & { userData: { uniforms: { uTime: { value: number } } } };
+  material.customProgramCacheKey = () => 'ludo-tile-v2';
+  return material;
 }
 
-/** Soft radial-gradient playfield with faint slowly rotating rings. */
+/** Soft radial-gradient playfield with faint, fixed concentric rings. */
 export function createFeltMaterial(): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
-    uniforms: { uTime: { value: 0 }, uInner: { value: new THREE.Color('#3a2f86') }, uOuter: { value: new THREE.Color('#15103a') } },
+    uniforms: { uInner: { value: new THREE.Color('#342a7a') }, uOuter: { value: new THREE.Color('#15103a') } },
     vertexShader: `varying vec2 vPos; void main(){ vPos = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
     fragmentShader: `
-      uniform float uTime; uniform vec3 uInner; uniform vec3 uOuter; varying vec2 vPos;
+      uniform vec3 uInner; uniform vec3 uOuter; varying vec2 vPos;
       void main(){
         float r = length(vPos);
         vec3 col = mix(uInner, uOuter, smoothstep(0.0, 11.0, r));
-        float rings = smoothstep(0.92, 1.0, sin(r * 3.2 - uTime * 0.6)) * 0.06 * (1.0 - smoothstep(4.0, 11.0, r));
-        float ang = atan(vPos.y, vPos.x);
-        float rays = pow(max(0.0, sin(ang * 8.0 + uTime * 0.15)), 18.0) * 0.04 * (1.0 - smoothstep(1.0, 10.0, r));
-        gl_FragColor = vec4(col + vec3(0.6, 0.5, 1.0) * (rings + rays), 1.0);
+        float rings = smoothstep(0.94, 1.0, sin(r * 3.2)) * 0.035 * (1.0 - smoothstep(4.0, 11.0, r));
+        gl_FragColor = vec4(col + vec3(0.6, 0.5, 1.0) * rings, 1.0);
         #include <colorspace_fragment>
       }`,
   });
