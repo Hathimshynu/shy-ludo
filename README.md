@@ -165,9 +165,10 @@ headers and the `/api` rewrite to Render. Set `VITE_API_URL=/api`,
 
 ## 11. Render deployment
 
-`render.yaml` Blueprint creates the API web service, PostgreSQL and Key Value, wires
-`DATABASE_URL`/`REDIS_URL`, generates JWT secrets, runs migrations pre-deploy and uses
-`/health` as the health check. Set `CLIENT_URL`. Full steps:
+`render.yaml` Blueprint creates free-tier API, PostgreSQL and Key Value services, wires
+`DATABASE_URL`/`REDIS_URL`, generates JWT secrets, applies migrations at API startup and
+uses `/health` as the health check. Set `CLIENT_URL`. The free database expires after
+30 days; see limitations and full steps:
 [DEPLOYMENT.md](DEPLOYMENT.md#1-render-api--postgresql--key-value).
 
 ## 12. Socket.IO architecture

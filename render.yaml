@@ -1,16 +1,16 @@
-# Render Blueprint — API + PostgreSQL + Key Value (Redis-compatible).
-# New → Blueprint → select this repository. After the first deploy set CLIENT_URL
-# to your Vercel URL(s) in the dashboard (it is marked sync: false).
+# Render Blueprint — free-tier API + PostgreSQL + Key Value (Redis-compatible).
+# New → Blueprint → select this repository. Set CLIENT_URL to the planned Vercel
+# origin during Blueprint creation; it is marked sync: false.
 services:
   - type: web
     name: ludo-nova-api
     runtime: node
-    plan: starter
+    plan: free
     region: oregon
     rootDir: .
     buildCommand: npm ci --include=dev && npm run build:server
-    preDeployCommand: npm run db:deploy
-    startCommand: node apps/server/dist/index.js
+    # Free instances do not support pre-deploy commands; apply migrations at startup.
+    startCommand: npm run db:deploy && node apps/server/dist/index.js
     healthCheckPath: /health
     # Deploy only after GitHub checks (CI) pass on the commit.
     autoDeployTrigger: checksPass
@@ -50,7 +50,7 @@ services:
 
 databases:
   - name: ludo-nova-db
-    plan: basic-256mb
+    plan: free
     region: oregon
     databaseName: ludo
     user: ludo
