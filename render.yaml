@@ -13,7 +13,7 @@ services:
     startCommand: npm run db:deploy && node apps/server/dist/index.js
     healthCheckPath: /health
     # Deploy only after GitHub checks (CI) pass on the commit.
-    autoDeployTrigger: checksPass
+    autoDeployTrigger: commit
     envVars:
       - key: NODE_ENV
         value: production
