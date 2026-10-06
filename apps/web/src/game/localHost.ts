@@ -181,7 +181,7 @@ export class LocalGameHost {
         if (!this.state || this.state.seq !== seq) return;
         if (this.state.turn.phase === 'roll') this.apply({ type: 'ROLL', playerId: bot.id });
         else {
-          const move = chooseMove(this.state, bot.id, bot.botLevel ?? 'medium');
+          const move = chooseMove(this.state, bot.id, bot.botLevel ?? 'medium', this.opts.random);
           if (move) this.apply({ type: 'MOVE', playerId: bot.id, tokenIndex: move.tokenIndex });
         }
       }, this.opts.botDelayMs ?? 650);

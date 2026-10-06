@@ -1,5 +1,6 @@
 import { type Browser, type BrowserContext, type Page, expect } from '@playwright/test';
 import type { GameState } from '@ludo/shared-types';
+import { E2E_DICE_SEED, E2E_DICE_SEED_KEY } from './seed';
 
 interface LudoHook {
   game: () => {
@@ -35,13 +36,17 @@ const FAST_SETTINGS = JSON.stringify({
 
 export async function newPlayer(browser: Browser, viewport = { width: 1280, height: 800 }): Promise<{ context: BrowserContext; page: Page }> {
   const context = await browser.newContext({ viewport });
-  await context.addInitScript((settings) => {
-    try {
-      localStorage.setItem('ludo-nova:settings', settings);
-    } catch {
-      /* ignore */
-    }
-  }, FAST_SETTINGS);
+  await context.addInitScript(
+    ([settings, key, seed]) => {
+      try {
+        localStorage.setItem('ludo-nova:settings', settings);
+        localStorage.setItem(key, seed);
+      } catch {
+        /* ignore */
+      }
+    },
+    [FAST_SETTINGS, E2E_DICE_SEED_KEY, E2E_DICE_SEED] as const,
+  );
   const page = await context.newPage();
   page.on('pageerror', (err) => {
     throw err;

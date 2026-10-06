@@ -26,6 +26,17 @@ export function clearSavedSolo(): void {
   }
 }
 
+/** End-to-end test builds only: a dice seed for reproducible solo games (see soloGame.worker.ts). */
+function e2eSeedName(): string {
+  if (import.meta.env.VITE_E2E !== 'true') return 'ludo-solo';
+  try {
+    const seed = localStorage.getItem('ludo-nova:e2e-dice-seed');
+    return seed ? `ludo-e2e-seed:${seed}` : 'ludo-solo';
+  } catch {
+    return 'ludo-solo';
+  }
+}
+
 /** Solo games: the engine + AI run in a Web Worker; this adapts it to GameTransport. */
 export class WorkerTransport implements GameTransport {
   readonly mode = 'solo' as const;
@@ -38,7 +49,7 @@ export class WorkerTransport implements GameTransport {
     private readonly config: SoloConfig,
     resume: GameState | null,
   ) {
-    this.worker = new Worker(new URL('../workers/soloGame.worker.ts', import.meta.url), { type: 'module' });
+    this.worker = new Worker(new URL('../workers/soloGame.worker.ts', import.meta.url), { type: 'module', name: e2eSeedName() });
     this.worker.onmessage = (e: MessageEvent<HostOutbound>) => this.receive(e.data);
     this.send({ type: 'init', config, saved: resume });
   }

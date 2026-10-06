@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import EmbeddedPostgres from 'embedded-postgres';
+import { E2E_DICE_SEED } from './seed';
 
 export const API_PORT = Number(process.env.E2E_API_PORT ?? 4100);
 export const WEB_PORT = Number(process.env.E2E_WEB_PORT ?? 5199);
@@ -95,6 +96,9 @@ export default async function globalSetup() {
       CLIENT_URL: `http://localhost:${WEB_PORT}`,
       BOT_DELAY_MS: '250',
       RATE_LIMIT_DISABLED: 'true',
+      // Reproducible games: every game gets its own dice seeded with E2E_DICE_SEED (test
+      // builds only — the server refuses DICE_SEED when NODE_ENV=production).
+      DICE_SEED: E2E_DICE_SEED,
       DISCONNECT_GRACE_SECONDS: '120',
       LOG_LEVEL: 'warn',
     },

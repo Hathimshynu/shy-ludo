@@ -34,9 +34,12 @@ export class GameSessionManager {
   private readonly sessions = new Map<string, GameSession>();
   private readonly userGame = new Map<string, string>();
   private readonly dice: DiceEngine;
+  /** Test-only: every game gets its own seeded dice, so its rolls never depend on other games. */
+  private readonly seeded: boolean;
 
   constructor(private readonly deps: GameSessionManagerDeps) {
     this.dice = createServerDice(deps.config);
+    this.seeded = deps.config.DICE_SEED !== undefined && !deps.config.isProduction;
   }
 
   get(gameId: string): GameSession | undefined {
@@ -77,7 +80,8 @@ export class GameSessionManager {
       players,
       rules,
       now: Date.now(),
-      firstSeat: randomInt(players.length),
+      // Seeded test runs are fully reproducible: fixed first seat, per-game dice.
+      firstSeat: this.seeded ? 0 : randomInt(players.length),
     });
     await this.deps.repo.createGame(state, room.id);
 
@@ -158,7 +162,7 @@ export class GameSessionManager {
       repo: this.deps.repo,
       broadcaster: this.deps.broadcaster,
       logger: this.deps.logger,
-      dice: this.dice,
+      dice: this.seeded ? createServerDice(this.deps.config) : this.dice,
       botDelayMs: this.deps.config.BOT_DELAY_MS,
       disconnectGraceSeconds: this.deps.config.DISCONNECT_GRACE_SECONDS,
       isOnline: this.deps.isOnline,

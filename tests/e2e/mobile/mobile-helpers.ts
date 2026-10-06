@@ -1,5 +1,6 @@
 import { type Browser, type Locator, type Page, expect } from '@playwright/test';
 import { gameState } from '../helpers';
+import { E2E_DICE_SEED, E2E_DICE_SEED_KEY } from '../seed';
 
 export const PORTRAIT = [
   { name: '320', width: 320, height: 568 },
@@ -32,13 +33,17 @@ export async function phone(
     deviceScaleFactor: 2,
     ...(opts.userAgent ? { userAgent: opts.userAgent } : {}),
   });
-  await context.addInitScript((s) => {
-    try {
-      localStorage.setItem('ludo-nova:settings', s);
-    } catch {
-      /* ignore */
-    }
-  }, SETTINGS(opts.settings));
+  await context.addInitScript(
+    ([s, key, seed]) => {
+      try {
+        localStorage.setItem('ludo-nova:settings', s);
+        localStorage.setItem(key, seed);
+      } catch {
+        /* ignore */
+      }
+    },
+    [SETTINGS(opts.settings), E2E_DICE_SEED_KEY, E2E_DICE_SEED] as const,
+  );
   const page = await context.newPage();
   page.on('pageerror', (err) => {
     throw err;
