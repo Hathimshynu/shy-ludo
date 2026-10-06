@@ -51,7 +51,8 @@ test('two browsers: create, join, synchronised play, reconnect after refresh, an
     const stale = await s.emit('dice:roll', { gameId, actionId: id(), expectedSeq: seq + 3 });
     return [wrongTurn, fakeDice, badGame, badToken, stale].map((r) => r.error?.code ?? 'OK');
   }, synced.id);
-  expect(results).toEqual(['NOT_YOUR_TURN', 'NOT_YOUR_TURN', 'GAME_NOT_FOUND', 'VALIDATION', 'STALE_STATE']);
+  // A dice value in the payload is a forgery: rejected before the turn is even checked.
+  expect(results).toEqual(['NOT_YOUR_TURN', 'VALIDATION', 'GAME_NOT_FOUND', 'VALIDATION', 'STALE_STATE']);
 
   const currentPage = pages[ids.indexOf(current)]!;
   const dup = await currentPage.evaluate(async (gameId) => {

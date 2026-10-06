@@ -123,9 +123,10 @@ export const socketSchemas = {
       .refine((v) => (LIMITS.matchmakingSizes as readonly number[]).includes(v), 'Unsupported table size'),
   }),
   'matchmaking:leave': empty,
-  // Note: there is deliberately no dice value — any client-sent value is stripped.
-  'dice:roll': actionBaseSchema,
-  'token:move': actionBaseSchema.extend({ tokenIndex: z.number().int().min(0).max(3) }),
+  // Game actions are strict: the client never sends a dice value, player id, position or
+  // anything else — a payload carrying extra fields is a forgery and is rejected outright.
+  'dice:roll': actionBaseSchema.strict(),
+  'token:move': actionBaseSchema.extend({ tokenIndex: z.number().int().min(0).max(3) }).strict(),
   'game:sync': z.object({ gameId: idSchema }),
   'game:leave': z.object({ gameId: idSchema }),
   'game:emote': z.object({ gameId: idSchema, emote: z.enum(LIMITS.emotes) }),

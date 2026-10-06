@@ -82,9 +82,18 @@ describe('anti-cheat validation', () => {
     const notUuid = await current.roll({ actionId: 'replay-me' });
     expect(!notUuid.ok && notUuid.error.code).toBe('VALIDATION');
 
-    // A fake dice value and a forged player id are stripped: the server rolls for the socket's user.
+    // A fake dice value or a forged player id is rejected outright, and changes nothing.
+    const seqBefore = current.state!.seq;
+    for (const forged of [{ value: 6 }, { value: '6' }, { value: 0 }, { value: 7 }, { value: -1 }, { value: 999 }, { playerId: other.id }]) {
+      const r = await current.roll({ actionId: randomUUID(), ...forged });
+      expect(!r.ok && r.error.code).toBe('VALIDATION');
+    }
+    const sync = await current.emit('game:sync', { gameId: current.state!.id });
+    expect(sync.ok && sync.snapshot!.state.seq).toBe(seqBefore);
+
+    // A clean roll: the server rolls for the socket's own user.
     const actionId = randomUUID();
-    const rolled = await current.roll({ actionId, value: 6, playerId: other.id });
+    const rolled = await current.roll({ actionId });
     expect(rolled.ok).toBe(true);
     await current.waitFor(() => current.events.some((e) => e.type === 'DICE_ROLLED'));
     expect(current.events.find((e) => e.type === 'DICE_ROLLED')!.playerId).toBe(current.id);

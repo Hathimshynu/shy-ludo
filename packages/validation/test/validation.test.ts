@@ -9,15 +9,15 @@ describe('validation schemas', () => {
     expect(roomCodeSchema.safeParse('AIK9P2').success).toBe(false); // I is not in the alphabet
   });
 
-  it('strips client-supplied dice values and player ids from a roll', () => {
-    const r = socketSchemas['dice:roll'].parse({
-      gameId: 'game_1',
-      actionId: '0d9c2a4e-9a5b-4b8e-9d0f-2f1f6e3a1c11',
-      expectedSeq: 4,
-      value: 6,
-      playerId: 'someone-else',
-    });
-    expect(r).toEqual({ gameId: 'game_1', actionId: '0d9c2a4e-9a5b-4b8e-9d0f-2f1f6e3a1c11', expectedSeq: 4 });
+  it('rejects client-supplied dice values, player ids and positions on game actions', () => {
+    const base = { gameId: 'game_1', actionId: '0d9c2a4e-9a5b-4b8e-9d0f-2f1f6e3a1c11', expectedSeq: 4 };
+    expect(socketSchemas['dice:roll'].parse(base)).toEqual(base);
+    for (const forged of [{ value: 6 }, { value: '6' }, { value: 0 }, { value: 7 }, { value: -1 }, { value: 999 }, { dice: 6 }, { playerId: 'someone-else' }, { userId: 'x' }]) {
+      expect(socketSchemas['dice:roll'].safeParse({ ...base, ...forged }).success).toBe(false);
+    }
+    expect(socketSchemas['token:move'].safeParse({ ...base, tokenIndex: 1 }).success).toBe(true);
+    expect(socketSchemas['token:move'].safeParse({ ...base, tokenIndex: 1, playerId: 'p2' }).success).toBe(false);
+    expect(socketSchemas['token:move'].safeParse({ ...base, tokenIndex: 1, to: 56 }).success).toBe(false);
   });
 
   it('rejects malformed moves', () => {
