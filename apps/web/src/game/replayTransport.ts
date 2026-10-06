@@ -159,8 +159,14 @@ export class ReplayTransport implements GameTransport {
 
   // ---- Internals ----------------------------------------------------------------------
 
+  private cached: { position: number; state: GameState } | null = null;
+
+  /** State after `position` events, rebuilt with the engine's projection (cached per position). */
   private stateAt(position: number): GameState {
-    return applyEvents(this.initial, this.events.slice(0, position));
+    if (this.cached?.position !== position) {
+      this.cached = { position, state: applyEvents(this.initial, this.events.slice(0, position)) };
+    }
+    return this.cached.state;
   }
 
   /** Moves applied so far. */

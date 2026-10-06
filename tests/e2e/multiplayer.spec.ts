@@ -91,9 +91,11 @@ test('two browsers: create, join, synchronised play, reconnect after refresh, an
   await a.page.goto('/profile');
   await a.page.getByRole('link', { name: /Watch replay/ }).first().click();
   await expect(a.page).toHaveURL(new RegExp(`/replay/${final.id}$`));
+  // Like every game page in these tests: wait for the game to load first (software WebGL can
+  // take a while to compile the first frame on a loaded CI machine), then check the UI.
+  await a.page.waitForFunction(() => window.__ludo?.game().visual?.seq === 0, null, { polling: 200 });
   await expect(a.page.getByRole('group', { name: 'Replay controls' })).toBeVisible();
   await expect(a.page.locator('.hud-top .conn')).toHaveText('Replay');
-  await a.page.waitForFunction(() => window.__ludo?.game().visual?.seq === 0, null, { polling: 200 });
   for (let i = 0; i < 3; i += 1) {
     const before = await a.page.evaluate(() => window.__ludo!.game().visual!.seq);
     await a.page.getByRole('button', { name: 'Next move' }).click();
