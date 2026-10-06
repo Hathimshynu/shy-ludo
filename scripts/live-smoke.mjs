@@ -53,6 +53,8 @@ class Client {
     this.user = null;
     this.socket = null;
     this.seqs = [];
+    /** seq → serialized event, to compare streams across clients. */
+    this.events = new Map();
     this.gaps = 0;
     this.dupes = 0;
     this.lastSeq = null;
@@ -121,6 +123,7 @@ class Client {
           }
           if (this.lastSeq === null || e.seq > this.lastSeq) this.lastSeq = e.seq;
           this.seqs.push(e.seq);
+          this.events.set(e.seq, JSON.stringify(e));
         }
       });
       socket.on('game:finish', (p) => (this.finish = p));
@@ -137,8 +140,14 @@ class Client {
 }
 
 async function sync(client, gameId) {
-  const r = await client.emit('game:sync', { gameId });
-  return r.ok ? r.snapshot.state : null;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const r = await client.emit('game:sync', { gameId });
+    if (r.ok) return r.snapshot.state;
+    // The per-socket rate limiter is doing its job; back off like a real client would.
+    if (r.error?.code !== 'RATE_LIMITED') return null;
+    await sleep(400);
+  }
+  return null;
 }
 
 const settings = (maxPlayers) => ({
@@ -158,8 +167,14 @@ const settings = (maxPlayers) => ({
 });
 
 /** One action for whoever's turn it is (via that player's own socket). */
+let syncTurn = 0;
 async function act(clients, gameId) {
-  const s = await sync(clients[0], gameId);
+  // Spread the driver's state reads over every player's socket: one socket asking for a
+  // snapshot per action would (correctly) trip the per-socket rate limiter.
+  syncTurn = (syncTurn + 1) % clients.length;
+  const s = await sync(clients[syncTurn], gameId);
+  // A finished game is removed from the server (results are already recorded): sync then
+  // answers GAME_NOT_FOUND, which is the end of the loop.
   if (!s || s.status !== 'playing') return s;
   const me = clients.find((c) => c.user.id === s.turn.playerId);
   if (!me) throw new Error(`turn belongs to unknown player ${s.turn.playerId}`);
@@ -332,16 +347,25 @@ for (;;) {
   }
 }
 const ms = performance.now() - t0;
-await sleep(2000);
-const finals = await Promise.all(clients.map((c) => sync(c, gameId)));
-check(`game finished after ${actions} actions`, finals.every((s) => s?.status === 'finished'), `${(ms / 1000).toFixed(1)} s, ${(ms / actions).toFixed(0)} ms/action`);
-const ref = JSON.stringify(finals[0]);
-check('every client sees an identical final state', finals.every((s) => JSON.stringify(s) === ref), `winner ${finals[0]?.rankings?.[0]}`);
-check('every client received game:finish with the same rankings', clients.every((c) => JSON.stringify(c.finish?.rankings) === JSON.stringify(finals[0]?.rankings)));
+for (let i = 0; i < 20 && !clients.every((c) => c.finish); i += 1) await sleep(500);
+const finishedEvent = (c) => [...c.events.values()].map((e) => JSON.parse(e)).find((e) => e.type === 'GAME_FINISHED');
+check(`game finished after ${actions} actions`, clients.every((c) => !!finishedEvent(c)), `${(ms / 1000).toFixed(1)} s, ${(ms / actions).toFixed(0)} ms/action`);
+const rankings = JSON.stringify(clients[0].finish?.rankings ?? null);
+check('every client received game:finish with the same rankings', clients.every((c) => c.finish && JSON.stringify(c.finish.rankings) === rankings), `winner ${clients[0].finish?.rankings?.[0] ?? 'none'}`);
+// Same ordered event stream ⇒ same state (clients derive state only from these events).
+let compared = 0;
+let mismatched = 0;
+for (const [seq, ev] of clients[0].events) {
+  for (const c of clients.slice(1)) {
+    if (!c.events.has(seq)) continue;
+    compared += 1;
+    if (c.events.get(seq) !== ev) mismatched += 1;
+  }
+}
+check('every client received the identical event stream (same state)', compared > 0 && mismatched === 0, `${compared} events compared, ${mismatched} differ`);
 check('no client saw a sequence gap or duplicate', clients.every((c) => c.gaps === 0 && c.dupes === 0), clients.map((c) => `${c.label}:${c.seqs.length}ev/${c.gaps}gap/${c.dupes}dup`).join(' '));
 {
-  const s = finals[0];
-  const r = await host.emit('dice:roll', { gameId, actionId: randomUUID(), expectedSeq: s.seq });
+  const r = await host.emit('dice:roll', { gameId, actionId: randomUUID(), expectedSeq: host.lastSeq ?? 0 });
   check('actions after the game finished are rejected', !r.ok, r.error?.code);
 }
 for (const c of clients) c.socket.disconnect();
