@@ -28,10 +28,16 @@ export function ioBroadcaster(io: LudoServer): Broadcaster {
     emit(channel, event, ...args) {
       io.to(channel).emit(event, ...args);
     },
+    // With the Redis adapter a cluster-wide socketsJoin/Leave is only *published*; even this
+    // instance's sockets join after the Redis round trip. Domain code emits right after a
+    // join (e.g. game:start straight after seating the players), so this instance's sockets
+    // must join synchronously first — otherwise that first event is silently lost.
     join(userId, channel) {
+      io.local.in(channels.user(userId)).socketsJoin(channel);
       io.in(channels.user(userId)).socketsJoin(channel);
     },
     leave(userId, channel) {
+      io.local.in(channels.user(userId)).socketsLeave(channel);
       io.in(channels.user(userId)).socketsLeave(channel);
     },
   };
