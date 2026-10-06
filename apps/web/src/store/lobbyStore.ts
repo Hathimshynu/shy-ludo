@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { GameSnapshotMessage, MatchmakingStatus, RoomView } from '@ludo/shared-types';
+import type { FriendInvite, GameSnapshotMessage, MatchmakingStatus, RoomView } from '@ludo/shared-types';
 import { socketClient } from '../services/socket';
 
 interface LobbyState {
@@ -8,6 +8,8 @@ interface LobbyState {
   /** Live game the server restored for us (refresh / reconnect). */
   restoredGame: GameSnapshotMessage | null;
   kickedFrom: string | null;
+  /** Latest room invite from a friend (shown until joined or dismissed). */
+  invite: FriendInvite | null;
   setRoom: (room: RoomView | null) => void;
   clearRestored: () => void;
 }
@@ -19,6 +21,7 @@ export const useLobby = create<LobbyState>((set) => ({
   matchmaking: IDLE,
   restoredGame: null,
   kickedFrom: null,
+  invite: null,
   setRoom: (room) => set({ room }),
   clearRestored: () => set({ restoredGame: null }),
 }));
@@ -64,6 +67,11 @@ export function wireLobby(): void {
     if (useLobby.getState().room?.id === roomId) useLobby.setState({ room: null });
   });
   socketClient.on('matchmaking:status', (matchmaking) => useLobby.setState({ matchmaking }));
+  socketClient.on('friend:invite', (invite) => {
+    // Already in that room (or in a game): nothing to offer.
+    if (useLobby.getState().room?.code === invite.code) return;
+    useLobby.setState({ invite });
+  });
   socketClient.on('session:restore', ({ room, game }) => {
     if (game) enteredGames.add(game.gameId);
     useLobby.setState({

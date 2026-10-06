@@ -17,6 +17,7 @@ import { RulesEditor } from '../components/RulesEditor';
 import { Shell } from '../components/Shell';
 import { InstallButton } from '../components/Mobile';
 import { Field, Modal, Segmented, Spinner } from '../components/ui';
+import { InviteFriends } from '../components/Friends';
 
 function OfflineNotice() {
   const online = useOnline();
@@ -528,6 +529,7 @@ export function RoomPage({ code }: { code: string }) {
               </button>
             </div>
           )}
+          {emptySeats > 0 && <InviteFriends />}
           <div className="lobby-actions">
             <button className="btn btn-ghost" onClick={async () => { await emit('room:leave', {}); useLobby.setState({ room: null }); navigate('/play'); }}>
               Leave room

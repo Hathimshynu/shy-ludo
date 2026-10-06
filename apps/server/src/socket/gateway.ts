@@ -17,7 +17,8 @@ import { verifyAccessToken } from '../auth/tokens';
 import type { GameSessionManager } from '../game/GameSessionManager';
 import type { Matchmaker } from '../matchmaking/Matchmaker';
 import type { RoomManager, SocketUser } from '../rooms/RoomManager';
-import { channels, type LudoServer, type Presence } from './broadcaster';
+import { type Broadcaster, channels, type LudoServer, type Presence } from './broadcaster';
+import type { FriendService } from '../services/friendService';
 
 type LudoSocket = Socket<ClientToServerEvents, ServerToClientEvents, InterServerEvents, SocketData>;
 
@@ -53,12 +54,14 @@ export interface GatewayDeps {
   rooms: RoomManager;
   sessions: GameSessionManager;
   matchmaker: Matchmaker;
+  friends: FriendService;
+  broadcaster: Broadcaster;
 }
 
 const MAX_STRIKES = 40;
 
 export function registerGateway(deps: GatewayDeps): void {
-  const { io, config, logger, auth, presence, rooms, sessions, matchmaker } = deps;
+  const { io, config, logger, auth, presence, rooms, sessions, matchmaker, friends, broadcaster } = deps;
 
   io.use(async (socket, next) => {
     try {
@@ -187,6 +190,21 @@ export function registerGateway(deps: GatewayDeps): void {
     });
     on('game:emote', ({ gameId, emote }) => sessions.emote(userId, gameId, emote));
     on('time:ping', ({ clientTime }) => ok({ clientTime, serverTime: Date.now() }), 0.25);
+
+    // ---- Friends --------------------------------------------------------------------------
+    on(
+      'friend:invite',
+      async ({ userId: friendId }) => {
+        const room = rooms.roomOf(userId);
+        if (!room || room.kind !== 'private') return failWith(appError('NOT_IN_ROOM'));
+        if (!(await friends.areFriends(userId, friendId))) return failWith(appError('FORBIDDEN', 'You can only invite friends.'));
+        const user = await auth.getUser(userId);
+        if (!user) return failWith(appError('UNAUTHORIZED'));
+        broadcaster.emit(channels.user(friendId), 'friend:invite', { from: user, code: room.code });
+        return ok({});
+      },
+      3,
+    );
 
     socket.on('disconnect', (reason) => {
       const last = presence.remove(userId, socket.id);

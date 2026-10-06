@@ -57,6 +57,10 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Required').max(LIMITS.passwordMax),
 });
 
+export const friendRequestSchema = z.object({
+  username: z.string().trim().min(1, 'Enter a username').max(LIMITS.usernameMax + 10),
+});
+
 export const guestSchema = z.object({
   displayName: displayNameSchema.optional(),
 });
@@ -131,6 +135,7 @@ export const socketSchemas = {
   'game:leave': z.object({ gameId: idSchema }),
   'game:emote': z.object({ gameId: idSchema, emote: z.enum(LIMITS.emotes) }),
   'time:ping': z.object({ clientTime: z.number().finite() }),
+  'friend:invite': z.object({ userId: idSchema }),
 } as const;
 
 export type SocketEventName = keyof typeof socketSchemas;

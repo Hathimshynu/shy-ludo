@@ -2,6 +2,7 @@ import type { AppError } from './errors';
 import type { GameEvent } from './events';
 import type { AiDifficulty, GameState } from './game';
 import type { RoomSettings, RoomView } from './room';
+import type { FriendInvite } from './api';
 
 /** Acknowledgement envelope for every client → server event. */
 export type AckResult<T extends object = object> = ({ ok: true } & T) | { ok: false; error: AppError };
@@ -56,6 +57,8 @@ export interface ClientToServerEvents {
   'game:sync': (payload: { gameId: string }, ack: Ack<{ snapshot: GameSnapshotMessage }>) => void;
   'game:leave': (payload: { gameId: string }, ack: Ack) => void;
   'game:emote': (payload: { gameId: string; emote: string }, ack: Ack) => void;
+  /** Invite a friend (by user id) to the private room you are in. */
+  'friend:invite': (payload: { userId: string }, ack: Ack) => void;
   'time:ping': (payload: { clientTime: number }, ack: Ack<{ clientTime: number; serverTime: number }>) => void;
 }
 
@@ -75,6 +78,7 @@ export interface ServerToClientEvents {
   'player:reconnect': (payload: { gameId: string; playerId: string }) => void;
   'session:restore': (payload: { room: RoomView | null; game: GameSnapshotMessage | null }) => void;
   'server:error': (error: AppError) => void;
+  'friend:invite': (invite: FriendInvite) => void;
 }
 
 export interface InterServerEvents {

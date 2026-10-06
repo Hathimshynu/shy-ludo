@@ -16,6 +16,7 @@ import { AVATAR_IDS, Avatar } from '../components/Avatar';
 import { InstallButton } from '../components/Mobile';
 import { Shell } from '../components/Shell';
 import { Field, PasswordInput, Segmented, Spinner, Switch } from '../components/ui';
+import { FriendsPanel } from '../components/Friends';
 
 // ---------------------------------------------------------------------------
 // Auth
@@ -266,6 +267,8 @@ export function ProfilePage() {
             ))}
           </ul>
         </section>
+
+        {own && <FriendsPanel />}
 
         {own && (
           <section className="panel">

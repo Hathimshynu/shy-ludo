@@ -24,6 +24,7 @@ import {
 } from './services/coordination';
 import { GameRepository } from './services/gameRepository';
 import { ProfileService } from './services/profileService';
+import { FriendService } from './services/friendService';
 import { seedAchievements } from './services/stats';
 
 export interface LudoServerInstance {
@@ -65,6 +66,7 @@ export async function createLudoServer(
   const repo = new GameRepository(prisma);
   const auth = new AuthService(prisma, config);
   const profiles = new ProfileService(prisma);
+  const friends = new FriendService(prisma);
 
   const healthChecks: Array<() => Promise<void>> = [
     async () => {
@@ -78,7 +80,7 @@ export async function createLudoServer(
     });
   }
 
-  const app = createApp({ config, logger, prisma, auth, profiles, games: repo, healthChecks });
+  const app = createApp({ config, logger, prisma, auth, profiles, friends, games: repo, healthChecks });
   const httpServer = createHttpServer(app);
   const io: LudoServer = new Server(httpServer, {
     cors: { origin: config.allowedOrigins, credentials: true },
@@ -123,7 +125,7 @@ export async function createLudoServer(
   });
   const matchmaker = new Matchmaker({ queue, rooms, sessions, broadcaster, repo, logger });
 
-  registerGateway({ io, config, logger, auth, presence, rooms, sessions, matchmaker });
+  registerGateway({ io, config, logger, auth, presence, rooms, sessions, matchmaker, friends, broadcaster });
   await sessions.recover((stored, state) => rooms.restore(stored, state));
 
   return {

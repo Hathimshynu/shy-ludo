@@ -70,3 +70,31 @@ export interface ApiErrorBody {
   error: { code: string; message: string; fields?: Record<string, string> };
   requestId?: string;
 }
+
+// ---- Friends -----------------------------------------------------------------------
+
+/** A friend or a pending request. Only public profile fields — never email. */
+export interface FriendEntry {
+  user: PublicUser;
+  since: string;
+}
+
+export interface FriendsResponse {
+  friends: FriendEntry[];
+  /** Requests other players sent to me. */
+  incoming: FriendEntry[];
+  /** Requests I sent that are still pending. */
+  outgoing: FriendEntry[];
+}
+
+export interface FriendRequestResult {
+  /** "accepted" when the other player had already asked to be friends. */
+  status: 'pending' | 'accepted';
+  user: PublicUser;
+}
+
+/** A friend invited you to their private room. */
+export interface FriendInvite {
+  from: PublicUser;
+  code: string;
+}

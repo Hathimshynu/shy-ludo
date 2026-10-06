@@ -21,6 +21,33 @@ function RejoinBanner() {
   );
 }
 
+function InviteBanner() {
+  const invite = useLobby((s) => s.invite);
+  const navigate = useNavigate();
+  if (!invite) return null;
+  const dismiss = () => useLobby.setState({ invite: null });
+  return (
+    <div className="rejoin invite-banner" role="alert">
+      <Avatar id={invite.from.avatar} size={28} />
+      <span>
+        <strong>{invite.from.displayName}</strong> invited you to room <strong>{invite.code}</strong>.
+      </span>
+      <button
+        className="btn btn-primary btn-sm"
+        onClick={() => {
+          dismiss();
+          navigate(`/room/${invite.code}`);
+        }}
+      >
+        Join
+      </button>
+      <button className="btn btn-ghost btn-sm" onClick={dismiss}>
+        Dismiss
+      </button>
+    </div>
+  );
+}
+
 export function Shell({ children, wide = false }: { children: ReactNode; wide?: boolean }) {
   const user = useAuth((s) => s.user);
   return (
@@ -52,6 +79,7 @@ export function Shell({ children, wide = false }: { children: ReactNode; wide?: 
       </header>
       <OfflineBanner />
       <RejoinBanner />
+      <InviteBanner />
       <main className={wide ? 'page page-wide' : 'page'}>{children}</main>
       <footer className="footer">
         <span>© {new Date().getFullYear()} Ludo Nova · An original game</span>

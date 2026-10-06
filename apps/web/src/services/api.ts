@@ -1,5 +1,7 @@
 import type {
   ApiErrorBody,
+  FriendRequestResult,
+  FriendsResponse,
   AuthResponse,
   GameEvent,
   GameHistoryEntry,
@@ -150,4 +152,9 @@ export const api = {
     request<LeaderboardResponse>(`/leaderboard?category=${category}&limit=50`),
   replay: (gameId: string) =>
     request<{ initial: GameState; events: GameEvent[]; status: string }>(`/games/${encodeURIComponent(gameId)}/replay`),
+  friends: () => request<FriendsResponse>('/friends'),
+  addFriend: (username: string) => request<FriendRequestResult>('/friends/requests', { method: 'POST', body: { username } }),
+  acceptFriend: (userId: string) => request<void>(`/friends/requests/${encodeURIComponent(userId)}/accept`, { method: 'POST' }),
+  rejectFriend: (userId: string) => request<void>(`/friends/requests/${encodeURIComponent(userId)}/reject`, { method: 'POST' }),
+  removeFriend: (userId: string) => request<void>(`/friends/${encodeURIComponent(userId)}`, { method: 'DELETE' }),
 };

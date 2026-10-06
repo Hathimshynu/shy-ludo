@@ -1305,3 +1305,49 @@ input[type='range'] {
   justify-content: center;
   margin-top: 32px;
 }
+
+/* ---- Friends ------------------------------------------------------------------------- */
+.friends h3 {
+  margin: 18px 0 8px;
+  font-size: 0.95rem;
+  color: var(--text-dim);
+}
+.friend-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+.friend-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: var(--radius-s);
+  background: rgba(8, 6, 26, 0.35);
+}
+.friend-name {
+  display: grid;
+  min-width: 0;
+}
+.friend-name strong,
+.friend-name .hint {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.friend-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.invite-friends {
+  margin-top: 14px;
+}
+.invite-banner {
+  flex-wrap: wrap;
+  text-align: center;
+}

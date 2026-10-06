@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import {
+  friendRequestSchema,
   guestSchema,
   leaderboardQuerySchema,
   loginSchema,
@@ -15,6 +16,7 @@ import { HttpError } from '../errors';
 import type { AuthResult, AuthService } from '../auth/authService';
 import { csrfGuard, limiter, optionalAuth, requireAuth, validateBody } from '../middleware/http';
 import type { ProfileService } from '../services/profileService';
+import type { FriendService } from '../services/friendService';
 import type { GameRepository } from '../services/gameRepository';
 
 export const REFRESH_COOKIE = 'ln_rt';
@@ -24,6 +26,7 @@ export interface ApiDeps {
   prisma: PrismaClient;
   auth: AuthService;
   profiles: ProfileService;
+  friends: FriendService;
   games: GameRepository;
   healthChecks: Array<() => Promise<void>>;
 }
@@ -49,7 +52,7 @@ export function healthRouter(deps: Pick<ApiDeps, 'healthChecks'>): Router {
 }
 
 export function apiRouter(deps: ApiDeps): Router {
-  const { config, auth, profiles, games } = deps;
+  const { config, auth, profiles, friends, games } = deps;
   const router = Router();
 
   const setRefreshCookie = (res: Response, result: AuthResult) => {
@@ -147,6 +150,31 @@ export function apiRouter(deps: ApiDeps): Router {
     const query = parseWith(leaderboardQuerySchema, req.query);
     if (!query.ok) throw new HttpError('VALIDATION', query.error.message, query.error.fields);
     res.json(await profiles.leaderboard(query.data.category, query.data.limit, req.userId ?? null));
+  });
+
+  // ---- Friends (registered players only; identity always from the access token) -------
+  const userParam = (raw: unknown) => {
+    const id = parseWith(idSchema, raw);
+    if (!id.ok) throw new HttpError('NOT_FOUND', 'Player not found.');
+    return id.data;
+  };
+  router.get('/friends', requireAuth(config), async (req, res) => {
+    res.json(await friends.list(req.userId!));
+  });
+  router.post('/friends/requests', requireAuth(config), limiter(config, 10 * 60_000, 30), validateBody(friendRequestSchema), async (req, res) => {
+    res.status(201).json(await friends.request(req.userId!, req.isGuest === true, (req.body as { username: string }).username));
+  });
+  router.post('/friends/requests/:userId/accept', requireAuth(config), async (req, res) => {
+    await friends.accept(req.userId!, userParam(req.params.userId));
+    res.status(204).end();
+  });
+  router.post('/friends/requests/:userId/reject', requireAuth(config), async (req, res) => {
+    await friends.reject(req.userId!, userParam(req.params.userId));
+    res.status(204).end();
+  });
+  router.delete('/friends/:userId', requireAuth(config), async (req, res) => {
+    await friends.remove(req.userId!, userParam(req.params.userId));
+    res.status(204).end();
   });
 
   // ---- Replays --------------------------------------------------------------------
