@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { lazy, type ReactNode, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { LIMITS } from '@ludo/config';
 import type { PlayerState } from '@ludo/shared-types';
 import { track } from '../services/analytics';
@@ -109,9 +109,11 @@ export interface GameViewProps {
   onExit: () => void;
   onPlayAgain?: (() => void) | undefined;
   playAgainLabel?: string;
+  /** Replay mode: playback controls shown in the action dock. */
+  replayControls?: ReactNode;
 }
 
-export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgainLabel = 'Play again' }: GameViewProps) {
+export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgainLabel = 'Play again', replayControls }: GameViewProps) {
   const directorRef = useRef<GameDirector | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [emotesOpen, setEmotesOpen] = useState(false);
@@ -160,7 +162,8 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
   const choices = useMemo(() => (mustMove && visual ? describeMoves(visual, myId) : []), [mustMove, visual, myId]);
 
   // Android Back during a game asks before leaving instead of silently exiting.
-  useBackGuard(visual?.status === 'playing', () => setLeaving(true));
+  // (A replay has nothing to lose: Back simply leaves it.)
+  useBackGuard(visual?.status === 'playing' && transport.mode !== 'replay', () => setLeaving(true));
 
   // Mobile analytics hooks (local DOM events only — see services/analytics.ts).
   const startedRef = useRef(false);
@@ -319,7 +322,7 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
         ) : (
           <span className="conn conn-good">
             <i />
-            Solo
+            {transport.mode === 'replay' ? 'Replay' : 'Solo'}
           </span>
         )}
       </header>
@@ -363,6 +366,8 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
             </button>
           )}
         </div>
+
+        {replayControls}
 
         {choices.length > 0 && (
           <div className="move-picker" role="group" aria-label="Choose a move">
@@ -444,7 +449,7 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
 
       {leaving && (
         <Modal
-          title={visual.status === 'finished' ? 'Leave the table?' : 'Leave this game?'}
+          title={transport.mode === 'replay' ? 'Close the replay?' : visual.status === 'finished' ? 'Leave the table?' : 'Leave this game?'}
           onClose={() => setLeaving(false)}
           actions={
             <>
@@ -464,7 +469,7 @@ export function GameView({ transport, myId, title, onExit, onPlayAgain, playAgai
           }
         >
           <p>
-            {visual.status !== 'playing'
+            {visual.status !== 'playing' || transport.mode === 'replay'
               ? 'You can come back to the menu at any time.'
               : online
                 ? 'Leaving forfeits your seat. The game continues without you.'

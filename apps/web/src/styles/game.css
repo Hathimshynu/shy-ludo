@@ -899,3 +899,49 @@
     min-height: 44px;
   }
 }
+
+/* ---- Replay viewer ---------------------------------------------------------------- */
+.replay-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 20px;
+  background: rgba(16, 12, 44, 0.9);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-2);
+}
+.replay-controls .icon-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.replay-play {
+  border-color: color-mix(in srgb, var(--accent) 70%, transparent);
+  color: var(--accent);
+}
+.replay-speed {
+  min-width: 52px;
+  min-height: 44px;
+  padding: 0 10px;
+  border-radius: 14px;
+  border: 1px solid var(--line-strong);
+  background: rgba(20, 16, 52, 0.6);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.replay-progress {
+  flex-basis: 100%;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.layout-desktop .replay-controls .replay-progress {
+  flex-basis: auto;
+}

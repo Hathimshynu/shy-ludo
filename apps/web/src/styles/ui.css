@@ -1028,6 +1028,14 @@ input[type='range'] {
 .history li > :last-child {
   grid-column: 2 / -1;
 }
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
 .delta-up {
   color: var(--good);
   font-weight: 700;

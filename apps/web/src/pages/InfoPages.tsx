@@ -280,7 +280,14 @@ export function ProfilePage() {
                     <span>{h.rank ? ORDINAL[h.rank - 1] : '—'} of {h.playerCount}</span>
                     <span className="hint">⚔ {h.captures}</span>
                     <span className={h.ratingDelta >= 0 ? 'delta-up' : 'delta-down'}>{h.ratingDelta > 0 ? '+' : ''}{h.ratingDelta}</span>
-                    <span className="hint">{h.finishedAt ? new Date(h.finishedAt).toLocaleString() : ''}</span>
+                    <span className="history-meta">
+                      <span className="hint">{h.finishedAt ? new Date(h.finishedAt).toLocaleString() : ''}</span>
+                      {h.finishedAt && (
+                        <Link className="btn btn-ghost btn-sm" to={`/replay/${h.gameId}`} aria-label={`Watch replay of the game finished ${new Date(h.finishedAt).toLocaleString()}`}>
+                          Watch replay
+                        </Link>
+                      )}
+                    </span>
                   </li>
                 ))}
               </ul>

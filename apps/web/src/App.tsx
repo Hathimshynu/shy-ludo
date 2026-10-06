@@ -21,6 +21,7 @@ const SoloSetupPage = lazy(() => PlayPages().then((m) => ({ default: m.SoloSetup
 const RoomPageImpl = lazy(() => PlayPages().then((m) => ({ default: m.RoomPage })));
 const OnlineGamePage = lazy(() => GamePages().then((m) => ({ default: m.OnlineGamePage })));
 const SoloGamePage = lazy(() => GamePages().then((m) => ({ default: m.SoloGamePage })));
+const ReplayPage = lazy(() => import('./pages/ReplayPage').then((m) => ({ default: m.ReplayPage })));
 const AuthPage = lazy(() => InfoPages().then((m) => ({ default: m.AuthPage })));
 const ProfilePage = lazy(() => InfoPages().then((m) => ({ default: m.ProfilePage })));
 const LeaderboardPage = lazy(() => InfoPages().then((m) => ({ default: m.LeaderboardPage })));
@@ -92,6 +93,7 @@ export function App() {
             <Route path="/solo" element={<SoloSetupPage />} />
             <Route path="/solo/game" element={<SoloGamePage />} />
             <Route path="/game/:gameId" element={<OnlineGamePage />} />
+            <Route path="/replay/:gameId" element={<ReplayPage />} />
             <Route path="/login" element={<AuthPage mode="login" />} />
             <Route path="/register" element={<AuthPage mode="register" />} />
             <Route path="/profile" element={<ProfilePage />} />

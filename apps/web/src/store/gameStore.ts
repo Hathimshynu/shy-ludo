@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { GameState } from '@ludo/shared-types';
 
-export type GameMode = 'online' | 'solo';
+export type GameMode = 'online' | 'solo' | 'replay';
 
 export interface Banner {
   id: number;

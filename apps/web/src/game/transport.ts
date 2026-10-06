@@ -16,7 +16,7 @@ export interface TransportHandlers {
  * online games, a Web Worker for solo games. Both deliver the same event format.
  */
 export interface GameTransport {
-  readonly mode: 'online' | 'solo';
+  readonly mode: 'online' | 'solo' | 'replay';
   subscribe(handlers: TransportHandlers): () => void;
   requestSnapshot(): void;
   roll(expectedSeq: number): Promise<AckResult<{ seq?: number }>>;

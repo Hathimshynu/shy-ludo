@@ -12,6 +12,8 @@ import {
 } from './helpers';
 
 test('two browsers: create, join, synchronised play, reconnect after refresh, anti-cheat, winner', async ({ browser }) => {
+  // A full (seeded, so fixed-length) game plus watching its replay: ~3.4 min measured.
+  test.setTimeout(360_000);
   const a = await newPlayer(browser);
   const b = await newPlayer(browser);
   await signInAsGuest(a.page);
@@ -84,6 +86,31 @@ test('two browsers: create, join, synchronised play, reconnect after refresh, an
     await expect(p.locator('.winner-title')).toBeVisible({ timeout: 30_000 });
     await expect(p.locator('.winner-title')).toHaveText(ids[i] === winnerId ? 'YOU WIN' : /wins/);
   }
+
+  // --- Replay: the finished game can be watched back from the profile -----------------------
+  await a.page.goto('/profile');
+  await a.page.getByRole('link', { name: /Watch replay/ }).first().click();
+  await expect(a.page).toHaveURL(new RegExp(`/replay/${final.id}$`));
+  await expect(a.page.getByRole('group', { name: 'Replay controls' })).toBeVisible();
+  await expect(a.page.locator('.hud-top .conn')).toHaveText('Replay');
+  await a.page.waitForFunction(() => window.__ludo?.game().visual?.seq === 0, null, { polling: 200 });
+  for (let i = 0; i < 3; i += 1) {
+    const before = await a.page.evaluate(() => window.__ludo!.game().visual!.seq);
+    await a.page.getByRole('button', { name: 'Next move' }).click();
+    await a.page.waitForFunction((s) => (window.__ludo?.game().visual?.seq ?? 0) > s && !window.__ludo!.game().animating, before, { polling: 200 });
+  }
+  const afterThree = await a.page.evaluate(() => window.__ludo!.game().visual!.seq);
+  await a.page.getByRole('button', { name: 'Previous move' }).click();
+  await a.page.waitForFunction((s) => (window.__ludo?.game().visual?.seq ?? 99) < s, afterThree, { polling: 200 });
+  // The replay never offers actions to the viewer.
+  await expect(a.page.getByRole('button', { name: 'Roll the dice' })).toHaveCount(0);
+  await a.page.getByRole('button', { name: 'Playback speed 1×, change to 2×' }).click();
+  await a.page.getByRole('button', { name: 'Playback speed 2×, change to 4×' }).click();
+  await a.page.getByRole('button', { name: 'Play replay' }).click();
+  await expect(a.page.locator('.winner-title')).toBeVisible({ timeout: 120_000 });
+  // The replayed result matches the real one.
+  const replayed = await a.page.evaluate(() => window.__ludo!.game().visual!.rankings);
+  expect(replayed).toEqual(final.rankings);
   await a.context.close();
   await b.context.close();
 });
