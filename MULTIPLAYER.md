@@ -38,11 +38,12 @@ Client → server (every call takes an acknowledgement callback returning
 | `game:start` | `{}` | host only; needs ≥ 2 seats, all humans ready |
 | `matchmaking:join` | `{ playerCount }` | 2 / 4 / 6 / 8 |
 | `matchmaking:leave` | `{}` | |
-| `dice:roll` | `{ gameId, actionId, expectedSeq }` | |
-| `token:move` | `{ gameId, actionId, expectedSeq, tokenIndex }` | |
+| `dice:roll` | `{ gameId, actionId, expectedSeq }` | strict: any extra field (a dice value, player id…) → `VALIDATION` |
+| `token:move` | `{ gameId, actionId, expectedSeq, tokenIndex }` | strict, as above |
 | `game:sync` | `{ gameId }` | returns full authoritative snapshot |
 | `game:leave` | `{ gameId }` | forfeits |
 | `game:emote` | `{ gameId, emote }` | whitelisted emotes, rate limited |
+| `friend:invite` | `{ userId }` | invite an accepted friend to the private room you are in |
 
 Server → client:
 
@@ -59,6 +60,17 @@ Server → client:
 | `game:pause` / `game:resume` | `{ gameId, reason }` |
 | `game:emote` | `{ gameId, playerId, emote }` |
 | `session:restore` | `{ room?, game? }` — sent on connect if the user has an active session |
+| `friend:invite` | `{ from, code }` — a friend invited you to their private room |
+
+### Delivery with the Redis adapter
+
+With `@socket.io/redis-adapter` (production), a cluster-wide `socketsJoin` is only
+*published*: even this instance's sockets join after the Redis round trip. Code that seats
+players in a channel and emits straight away (`game:start`) therefore joins this
+instance's sockets synchronously first (`io.local`), then broadcasts the join to the
+cluster (`socket/broadcaster.ts`; regression test `apps/server/test/broadcaster.test.ts`).
+As a second line of defence, a web client whose room reports a running game it never
+received `game:start` for fetches the snapshot once with `game:sync` and enters it.
 
 ### Why a single ordered `game:events` stream?
 

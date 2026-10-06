@@ -188,6 +188,11 @@ docker compose up --build   # web http://localhost:8080 · api http://localhost:
 
 ## 5. Post-deploy checklist
 
+Automated: `WEB_URL=https://<app>.vercel.app SOCKET_URL=https://<api>.onrender.com node scripts/live-smoke.mjs`
+covers most of the list below against the live deployment (see README → Verifying a deployment).
+The first request after 15 idle minutes can take ~1 minute on the free plan (instance waking up).
+
+
 - [ ] `GET /health` → `{"status":"ok"}`, `/health/ready` → ok
 - [ ] Landing page loads, `robots.txt` and `sitemap.xml` use your domain
 - [ ] Guest sign-in works; reload keeps you signed in (refresh cookie)

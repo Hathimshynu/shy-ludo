@@ -2,6 +2,7 @@
 
 **Play. Roll. Conquer.** — an original, server-authoritative 3D Ludo game for 2–8 players.
 Online quick match, private rooms with friends, and solo play against four levels of AI.
+Add friends and invite them to your room, and watch replays of finished games from your profile.
 
 > "Ludo Nova" is a temporary original brand. Every brand string lives in
 > [`packages/config/src/brand.ts`](packages/config/src/brand.ts); the logo/favicon in
@@ -136,6 +137,24 @@ npx playwright install chromium   # once, before the first E2E run
   dice and token selection, double-tap guard, safe areas, orientation changes, Back button,
   audio hint, haptics, winner screen, phone + phone + desktop + tablet multiplayer).
   Run one project with `npm run test:e2e -- --project mobile-chromium`.
+* E2E games are reproducible: the harness seeds the dice (`tests/e2e/seed.ts` → server
+  `DICE_SEED`, refused when `NODE_ENV=production`; solo worker seed only in `VITE_E2E`
+  builds). Production dice always come from `crypto.randomInt`.
+
+### Verifying a deployment
+
+```bash
+# Real browsers' path: REST via the Vercel /api rewrite, Socket.IO direct to Render.
+WEB_URL=https://<app>.vercel.app SOCKET_URL=https://<api>.onrender.com PLAYERS=2 QUICK=2   node scripts/live-smoke.mjs
+# Hard restart: SIGKILL the built API mid-game, restart, reconnect, finish (local).
+npm run build:server && node scripts/restart-check.mjs
+```
+
+`live-smoke.mjs` checks auth (guest, register, login, refresh rotation, logout, CSRF/origin),
+socket auth, a private game played to the winner with anti-cheat probes and a mid-game
+reconnect, identical event streams on every client, and Quick Match. It creates guest
+accounts and one `smoke_*` account; production allows 30 guest accounts per hour per IP.
+Results of the last run: [PRODUCTION_QA.md](PRODUCTION_QA.md).
 
 ### Load testing
 
