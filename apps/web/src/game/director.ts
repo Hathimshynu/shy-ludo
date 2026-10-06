@@ -52,6 +52,8 @@ export class GameDirector {
   private emoteId = 1;
   private bannerId = 1;
   private timers = new Set<number>();
+  /** Bumped by every snapshot; animations started under an older epoch are abandoned. */
+  private epoch = 0;
 
   constructor(
     readonly transport: GameTransport,
@@ -89,6 +91,8 @@ export class GameDirector {
   // ---------------------------------------------------------------------------
 
   private onSnapshot(snap: Pick<GameSnapshotMessage, 'state' | 'connected' | 'paused'>): void {
+    // Any animation still in flight belongs to the previous state: it must not write back.
+    this.epoch += 1;
     this.queue = [];
     const state = snap.state;
     useGame.setState({
@@ -175,7 +179,7 @@ export class GameDirector {
         const event = this.queue.shift()!;
         // Fast-forward when far behind or when the tab is hidden.
         const skip = this.queue.length > 12 || document.hidden;
-        await this.play(event, skip);
+        await this.play(event, skip, this.epoch);
       }
     } finally {
       this.processing = false;
@@ -186,6 +190,12 @@ export class GameDirector {
   private wait(ms: number, skip: boolean): Promise<void> {
     if (skip || ms <= 0) return Promise.resolve();
     return new Promise((r) => window.setTimeout(r, ms));
+  }
+
+  /** Wait during playback; false when a snapshot replaced the state meanwhile (or disposed). */
+  private async waitLive(ms: number, skip: boolean, epoch: number): Promise<boolean> {
+    await this.wait(ms, skip);
+    return epoch === this.epoch && !this.disposed;
   }
 
   /** A visual/audio cue scheduled during playback; cancelled if the game view closes. */
@@ -201,7 +211,7 @@ export class GameDirector {
     return id ? state.players.find((p) => p.id === id) : undefined;
   }
 
-  private async play(e: GameEvent, skip: boolean): Promise<void> {
+  private async play(e: GameEvent, skip: boolean, epoch: number): Promise<void> {
     const t = timings();
     const visual = useGame.getState().visual!;
     const actor = this.player(visual, e.playerId);
@@ -217,7 +227,7 @@ export class GameDirector {
           dice: { value: e.payload.value, rollId: prev.rollId + 1, spinning: false, color, by: e.playerId },
         });
         if (sound && !prev.spinning) audio.play('diceRoll');
-        await this.wait(t.dice, skip);
+        if (!(await this.waitLive(t.dice, skip, epoch))) return;
         if (sound) audio.play('diceLand');
         if (isMe && e.payload.movableTokens.length === 0 && !(e.payload.value === 6 && e.payload.consecutiveSixes >= 3)) {
           toast('No legal moves this time.', 'info', 1800);
@@ -243,7 +253,7 @@ export class GameDirector {
           });
           p.path.forEach((_, i) => this.later(() => audio.play('step', { pitch: 1 + i * 0.06 }), stepMs * (i + 1) - 10));
         }
-        await this.wait(total + 40, skip);
+        if (!(await this.waitLive(total + 40, skip, epoch))) return;
         useGame.setState({ visual: after });
         this.applyPlacements(after, placements);
         const board = createBoard(visual.armCount as ArmCount);
@@ -261,7 +271,7 @@ export class GameDirector {
             if (sound) this.later(() => audio.play('home'), dur * 0.1);
             if (isMe) haptic('home');
             // Let the celebration land before the next banner/turn change.
-            await this.wait(dur * 0.75, skip);
+            if (!(await this.waitLive(dur * 0.75, skip, epoch))) return;
           }
         } else if (square !== null && isSafeSquare(board, square) && p.kind !== 'release') {
           if (sound) audio.play('safe');
@@ -287,7 +297,7 @@ export class GameDirector {
         if (!skip) {
           this.patchToken(key, { anim: { kind: 'capture', points: [from, to], start: performance.now() + 120, stepMs: t.capture, hop: 2.2 } });
         }
-        await this.wait(t.capture + 160, skip);
+        if (!(await this.waitLive(t.capture + 160, skip, epoch))) return;
         useGame.setState({ visual: after });
         this.applyPlacements(after, placements);
         if (e.payload.by.playerId === this.myId) this.showBanner('Captured!', `${actor?.name ?? 'Token'} sent home`, attackColor);
@@ -304,13 +314,13 @@ export class GameDirector {
       case 'TURN_PENALTY':
         this.showBanner('Three sixes!', `${actor?.name ?? 'Player'} loses the turn`, '#ff5d73');
         if (sound) audio.play('error');
-        await this.wait(t.beat * 2, skip);
+        if (!(await this.waitLive(t.beat * 2, skip, epoch))) return;
         break;
       case 'TURN_TIMEOUT':
         if (isMe) toast("Time's up — the server played your turn.", 'warning');
         break;
       case 'TURN_CHANGED':
-        await this.wait(t.beat, skip);
+        if (!(await this.waitLive(t.beat, skip, epoch))) return;
         if (e.payload.playerId === this.myId) {
           if (sound) audio.play('yourTurn');
           haptic('yourTurn');
@@ -324,7 +334,7 @@ export class GameDirector {
         );
         // The last token's home-entry chime has just played; use a distinct cue here.
         if (sound) audio.play('notify');
-        await this.wait(t.finish, skip);
+        if (!(await this.waitLive(t.finish, skip, epoch))) return;
         break;
       case 'PLAYER_FORFEITED':
         if (!isMe) toast(`${actor?.name ?? 'A player'} left the game`, 'warning');
