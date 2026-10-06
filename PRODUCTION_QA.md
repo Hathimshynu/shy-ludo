@@ -31,25 +31,34 @@ Severity: **P0** game cannot be played · **P1** major gameplay/connectivity fai
 
 ### Live production (`scripts/live-smoke.mjs`, real Vercel + Render + PostgreSQL + Redis)
 
-| Check | 2 players | 4 players |
-| --- | --- | --- |
-| `/health`, `/health/ready` (DB + Redis) | PASS | PASS |
-| Guest via `/api` rewrite, refresh cookie set | PASS | PASS |
-| Refresh rotates token; reused token rejected | PASS | PASS |
-| CSRF header missing → 403; foreign Origin → 403 | PASS | PASS |
-| Register / duplicate / invalid username / login / wrong password / logout / refresh after logout | PASS | PASS |
-| Socket: forged token refused; authenticated connect over WebSocket from the Vercel origin | PASS | PASS |
-| Private room create → join → ready → start; every client gets `game:start` | PASS | PASS |
-| Anti-cheat: wrong turn, forged playerId, fake dice (0/7/−1/"6"/999/6), bad token, stale seq, foreign game, duplicate actionId | PASS | PASS |
-| Mid-game disconnect → refresh → new socket → `session:restore` at the server's seq | PASS | PASS |
-| Game played to the winner; identical event stream on every client (no gaps/duplicates) | PASS | PASS (615 events compared, 0 differ) |
-| Actions after the finish rejected | PASS | PASS |
-| Quick Match: N players join simultaneously → one game, everyone seated once | PASS (2) | PASS (4) |
+| Check | 2 players | 4 players | 8 players |
+| --- | --- | --- | --- |
+| `/health`, `/health/ready` (DB + Redis) | PASS | PASS | PASS |
+| Guest via `/api` rewrite, refresh cookie set | PASS | PASS | PASS |
+| Refresh rotates token; reused token rejected | PASS | PASS | PASS |
+| CSRF header missing → 403; foreign Origin → 403 | PASS | PASS | PASS |
+| Register / duplicate / invalid username / login / wrong password / logout / refresh after logout | PASS | PASS | PASS |
+| Socket: forged token refused; authenticated connect over WebSocket from the Vercel origin | PASS | PASS | PASS |
+| Private room create → join → ready → start; every client gets `game:start` | PASS | PASS | PASS |
+| Anti-cheat: wrong turn, forged playerId, fake dice (0/7/−1/"6"/999/6), bad token, stale seq, foreign game, duplicate actionId | PASS | PASS | PASS |
+| Mid-game disconnect → refresh → new socket → `session:restore` at the server's seq | PASS | PASS | PASS |
+| Game played to the winner; identical event stream on every client (no gaps/duplicates) | PASS | PASS (615 events compared, 0 differ) | PASS (4 828 events compared, 0 differ; 241 actions) |
+| Actions after the finish rejected | PASS | PASS | PASS |
+| Quick Match: N players join simultaneously → one game, everyone seated once | PASS (2) | PASS (4) | PASS (8) |
 
-6- and 8-player games were verified against a local production build (same code, no rate
-limit on guest creation — production allows 30 guests/hour/IP): 63/63 and 71/71 checks,
-2 193 and 6 267 events compared with 0 differences, Quick Match with 6 and 8 simultaneous
-joins → one game each.
+Live runs after the final deploy: 8 players 71/71, plus friends (request, accept, list,
+guest refused, invite delivered with the room code, non-friend invite refused, remove) and
+the replay API (the finished 8-player game: 690 events, ending in `GAME_FINISHED`).
+6-player games were verified against a local production build (63/63 checks, 2 193 events
+compared, 0 differences; Quick Match with 6 simultaneous joins → one game).
+
+### E2E (Playwright, local production build)
+
+Final full run: 51/52 passed in 31.4 min (previously 48/51 in 52.7 min with random dice).
+The one failure was the new replay check starting before the software-rendered page had
+loaded; fixed (`cd339ee`, waits for the game state like every other game test) and the
+test rerun passes. Previously timing-out tests now pass: two-browser, winner screen,
+phone + phone + desktop + tablet.
 
 ### Local
 
@@ -66,7 +75,6 @@ joins → one game each.
 | Item | Why |
 | --- | --- |
 | Real Android / iPhone devices | No physical devices in this environment; mobile coverage is Playwright emulation (Pixel 7, touch, 320–768 px). Manual check on a real phone recommended. |
-| Live 8-player game on production | Production rate limit: 30 guest accounts per hour per IP; 6/8-player runs were done against a local production build |
 | Render logs / dashboard, Vercel dashboard | No credentials; deployments were confirmed from the outside (new server behaviour observed live, new bundle served) |
 | Multi-instance (horizontal) Socket.IO routing | Single instance by design; see README "Known limitations" |
 | Text chat | Not implemented (lowest priority; would need moderation + reporting) |
