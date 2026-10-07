@@ -229,9 +229,6 @@ export class GameDirector {
         if (sound && !prev.spinning) audio.play('diceRoll');
         if (!(await this.waitLive(t.dice, skip, epoch))) return;
         if (sound) audio.play('diceLand');
-        if (isMe && e.payload.movableTokens.length === 0 && !(e.payload.value === 6 && e.payload.consecutiveSixes >= 3)) {
-          toast('No legal moves this time.', 'info', 1800);
-        }
         break;
       }
       case 'TOKEN_MOVED': {
